@@ -1,12 +1,12 @@
-# Cassandra Scala Driver
+# Vangas
 
-This is a Scala driver for [Apache Cassandra](https://github.com/apache/cassandra). This driver is fully asynchronous and non-blocking. It's based on [Akka-IO](http://doc.akka.io/docs/akka/2.3.6/scala/io.html) and [Akka-Actors](http://doc.akka.io/docs/akka/2.3.6/scala/actors.html).
-This driver is not a wrapper on [cassandra-java-driver](https://github.com/datastax/java-driver). It's implemented in Scala and there is no Java <-> Scala conversions.
-**Currently, this driver supports only Cassandra native-protocol-v3**.
+This is a Scala driver for [Apache Cassandra](https://github.com/apache/cassandra). It is fully asynchronous and non-blocking based on [Akka-IO](http://doc.akka.io/docs/akka/2.3.6/scala/io.html) and [Akka-Actors](http://doc.akka.io/docs/akka/2.3.6/scala/actors.html).
+This driver is not a wrapper on [cassandra-java-driver](https://github.com/datastax/java-driver).
+**Currently, vangas-cassandra supports only Cassandra native-protocol-v3**.
 
 ## Features
 
-* Non-blocking IO thanks to Akka-IO and NIO
+* Non-blocking IO
 * Query
 * Query value bindings
 * PreparedStatements
@@ -89,7 +89,7 @@ client.close()
 ```
 
 ## Build
-In order to build this project, you need to install [ccm](http://github.com/pcmanus/ccm). We have integration tests which need running cassandra instance. ccm makes it easy to create and teste cassandra cluster locally.
+In order to build this project, you need a running cassandra instance locally. We have integration tests which need running cassandra instance. You can use [ccm](http://github.com/pcmanus/ccm) which makes it easy to create and teste cassandra cluster locally.
 
 ## Releases
 Cassandra Scala Driver is not released yet because it's still under testing. But feel free to evaluate and create pull requests.
