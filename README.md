@@ -70,7 +70,7 @@ results.onSuccess{ case rs =>
 val results: Future[ResultSet] = session.execute("SELECT * FROM users WHERE id = ?", 123)
 ```
 
-#### PreparesStatement
+#### PreparedStatement
 ```scala
 val prepare: Future[PreparedStatement] = session.prepare("SELECT * FROM users WHERE id = ?")
 val results: Future[ResultSet] = prepare.flatMap{ prepared => session.execute(prepared.bind("123"))}
