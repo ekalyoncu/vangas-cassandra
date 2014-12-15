@@ -26,7 +26,7 @@ import org.joda.time.DateTime
 import java.net.InetAddress
 
 //FIXME: This test is integration test which depends on running cassandra node locally.
-class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with BeforeAndAfterAll with OneInstancePerTest {
+class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with BeforeAndAfterAll {
 
   val LOG = LoggerFactory.getLogger(getClass)
 
@@ -46,7 +46,7 @@ class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with Be
     "col8 uuid",
     "col9 inet"
   )
-  
+
   val DROP = "drop table if exists table1"
   val TABLE = s"create table table1 (id int primary key, ${columnDefs.mkString(", ")})"
   val INSERT =

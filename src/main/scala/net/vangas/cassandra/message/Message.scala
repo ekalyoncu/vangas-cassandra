@@ -138,9 +138,13 @@ case object Batch extends RequestMessage {
  * error code ([int]) followed by a [string] error message. Then, depending on
  * the exception, more content may follow.
  */
-case class Error(errorCode: Int, message: String) extends ResponseMessage
+case class Error(errorCode: Int, message: String) extends ResponseMessage {
+  override def toString: String = s"ErrorCode: $errorCode. $message"
+}
 
-case class NodeAwareError(error: Error, node: InetSocketAddress)
+case class NodeAwareError(error: Error, node: InetSocketAddress) {
+  override def toString: String = s"$error. Node[$node]"
+}
 
 object Error {
 

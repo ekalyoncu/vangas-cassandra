@@ -22,11 +22,14 @@ import java.util.concurrent.atomic.AtomicInteger
 import akka.actor.ActorSystem
 import net.vangas.cassandra.config.Configuration
 import net.vangas.cassandra.connection.{DefaultSession, Session}
+import org.slf4j.LoggerFactory
 
 class CassandraClient(nodeAddresses: Seq[String], port: Int = 9042) {
   import net.vangas.cassandra.CassandraClient._
 
-  private implicit val system = ActorSystem(s"CassandraClient-${clientId.incrementAndGet()}")
+  val id = clientId.incrementAndGet()
+  LOG.info(s"Creating CassandraClient-$id...")
+  private implicit val system = ActorSystem(s"CassandraClient-$id")
 
   /**
    * Creates a new session
@@ -53,5 +56,6 @@ class CassandraClient(nodeAddresses: Seq[String], port: Int = 9042) {
 }
 
 private object CassandraClient {
+  val LOG = LoggerFactory.getLogger("CassandraClient")
   val clientId = new AtomicInteger(0)
 }
