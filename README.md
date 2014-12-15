@@ -64,6 +64,18 @@ results.onSuccess{ case rs =>
 }
 ```
 
+#### Pimped response
+There are syntactic sugars which removes boilerplate codes while processing ResultSets.
+```scala
+import net.vangas.cassandra.pimped._
+```
+
+```scala
+session.execute("SELECT * FROM users").mapRows { row =>
+  //convert to your case class
+}
+```
+
 #### Bind values
 
 ```scala
