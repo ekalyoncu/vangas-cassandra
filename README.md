@@ -2,7 +2,7 @@
 
 This is a Scala driver for [Apache Cassandra](https://github.com/apache/cassandra). It is fully asynchronous and non-blocking based on [Akka-IO](http://doc.akka.io/docs/akka/2.3.6/scala/io.html) and [Akka-Actors](http://doc.akka.io/docs/akka/2.3.6/scala/actors.html).
 This driver is not a wrapper on [cassandra-java-driver](https://github.com/datastax/java-driver).
-**Currently, vangas-cassandra supports only Cassandra native-protocol-v3**.
+**Currently, Vangas supports only native-protocol-v3**.
 
 ## Features
 
