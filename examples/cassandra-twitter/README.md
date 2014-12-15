@@ -11,6 +11,7 @@ Data model is borrowed from [twissandra](https://github.com/twissandra/twissandr
 Here are the list of endpoints
 
 * **POST** /v1/users to create users
+* **POST** /v1/follow to follow a user
 * **POST** /v1/tweets to create tweet
-* **GET** /v1/tweets to get list of tweets
-* **GET** /v1/tweets/:tweet_id to get single tweet
+* **GET**  /v1/tweets to get list of tweets
+* **GET**  /v1/tweets/:tweet_id to get single tweet
