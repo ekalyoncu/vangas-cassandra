@@ -15,10 +15,17 @@ package object action {
 
   class UserAction(implicit executor : ExecutionContext) {
     val INSERT_PREPARED = session.prepare("INSERT INTO users(username, password) VALUES(?,?)")
+
     def save(user: UserEntity): Future[_] = {
       INSERT_PREPARED.flatMap { statement =>
         session.execute(statement.bind(user.userName, user.password))
       }
+    }
+
+    def follow(user: String, followed: String): Future[_] = {
+      //TODO: Following action should be a batch statement however batch is not implemented in vangas yet!
+      session.execute("INSERT INTO friends(username, friend, since) VALUES(?, ?, dateOf(now()))", user, followed)
+      session.execute("INSERT INTO followers(username, follower, since) VALUES(?, ?, dateOf(now()))", followed, user)
     }
   }
 

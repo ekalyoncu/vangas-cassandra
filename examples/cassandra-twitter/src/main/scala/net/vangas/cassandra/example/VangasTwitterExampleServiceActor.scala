@@ -1,8 +1,8 @@
 package net.vangas.cassandra.example
 
 import akka.actor.Actor
-import net.vangas.cassandra.example.action.{UserAction, TweetAction}
-import net.vangas.cassandra.example.model.{UserEntity, TweetEntity}
+import net.vangas.cassandra.example.action._
+import net.vangas.cassandra.example.model._
 import org.json4s.ext.JodaTimeSerializers
 import org.json4s.{DefaultFormats, Formats}
 import concurrent.ExecutionContext.Implicits.global
@@ -49,6 +49,15 @@ trait VangasTwitterExampleService extends HttpService with Json4sJacksonSupport 
           entity(as[TweetEntity]) { tweet =>
             onSuccess(tweetAction.save(tweet)) {
               _ => complete(Created)
+            }
+          }
+        }
+      } ~
+      path("follow") {
+        post {
+          entity(as[FollowEntity]) { follow =>
+            onSuccess(userAction.follow(follow.userName, follow.followedUserName)) {
+              _ => complete(OK)
             }
           }
         }

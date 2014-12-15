@@ -6,5 +6,6 @@ package object model {
 
   case class TweetEntity(id: Option[String], userName: String, body: String, creationTime: Option[DateTime])
   case class UserEntity(userName: String, password: String)
+  case class FollowEntity(userName: String, followedUserName: String)
 
 }
