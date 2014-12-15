@@ -5,6 +5,7 @@ Data model is borrowed from [twissandra](https://github.com/twissandra/twissandr
 
 ## How to run
 * Execute statements in tables.cql in order to create tables.
+* Publish vangas locally by typing ```sbt publish-local``` under vangas-cassandra folder.
 * Run spray app by typing ```sbt run```
 
 Here are the list of endpoints
