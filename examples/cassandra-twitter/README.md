@@ -1,10 +1,11 @@
 # Vangas Twitter Example
 
-Example to show the usage of vangas. Data model is borrowed from [twissandra](https://github.com/twissandra/twissandra).
+Spray.io based example to show the usage of vangas.
+Data model is borrowed from [twissandra](https://github.com/twissandra/twissandra).
 
 ## How to run
 * Execute statements in tables.cql in order to create tables.
-* Run spray http server by typing ```sbt run```
+* Run spray app by typing ```sbt run```
 
 Here are the list of endpoints
 
