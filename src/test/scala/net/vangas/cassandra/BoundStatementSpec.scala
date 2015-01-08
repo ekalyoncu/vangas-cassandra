@@ -29,7 +29,7 @@ class BoundStatementSpec extends FunSpec {
       val preparedStatement = new PreparedStatement(ExPrepared(prepared, "QUERY", null))
       val boundStatement = new BoundStatement(preparedStatement, Seq(1,2))
       val queryParameters = new QueryParameters(ConsistencyLevel.ONE, Seq(1,2), false, -1, None, ConsistencyLevel.SERIAL)
-      val e1 = boundStatement.executeRequest(QueryConfig())
+      val e1 = boundStatement.toRequestMessage(QueryConfig()).asInstanceOf[Execute]
       val e2 = Execute(new PreparedId("ID".getBytes), queryParameters)
       e1.queryId should be(e2.queryId)
       e1.queryParameters.serialize should be(e2.queryParameters.serialize)

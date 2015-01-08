@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Egemen Kalyoncu
+ * Copyright (C) 2015 Egemen Kalyoncu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,18 @@
  * limitations under the License.
  */
 
-package net.vangas.cassandra.exception
+package net.vangas.cassandra
 
-import net.vangas.cassandra.error.RequestError
+import java.net.InetSocketAddress
 
-class QueryExecutionException(requestError: RequestError) extends RuntimeException(requestError.toString)
+/**
+ * Events which is sent by cassandra nodes
+ */
+trait ServerEvents {
+
+  def onNodeUp(node: InetSocketAddress)
+  def onNodeDown(node: InetSocketAddress)
+  def onNodeAdded(node: InetSocketAddress)
+  def onNodeRemoved(node: InetSocketAddress)
+
+}

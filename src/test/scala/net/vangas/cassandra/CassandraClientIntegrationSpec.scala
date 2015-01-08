@@ -16,24 +16,23 @@
 
 package net.vangas.cassandra
 
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfter, OneInstancePerTest, FunSpec}
-import org.scalatest.Matchers._
-import org.slf4j.LoggerFactory
-import scala.concurrent.Await
-import scala.concurrent.duration._
-import scala.concurrent.ExecutionContext.Implicits.global
-import org.joda.time.DateTime
 import java.net.InetAddress
 
-//FIXME: This test is integration test which depends on running cassandra node locally.
-class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with BeforeAndAfterAll {
+import net.vangas.cassandra.connection.Session
+import org.joda.time.DateTime
+import org.scalatest.Matchers._
+import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, FunSpec}
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
-  val LOG = LoggerFactory.getLogger(getClass)
+class CassandraClientIntegrationSpec extends FunSpec with CCMSupport with BeforeAndAfterAll with BeforeAndAfter {
 
-  val keyspace = "test_ks"
+  val cluster = "test_cluster1"
+  val keyspace = "test_ks1"
 
-  val client = new CassandraClient(Seq("localhost"))
-  val session = client.createSession(keyspace)
+  var client: CassandraClient = _
+  var session: Session = _
 
   val columnDefs = Seq(
     "col1 int",
@@ -48,7 +47,9 @@ class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with Be
   )
 
   val DROP = "drop table if exists table1"
-  val TABLE = s"create table table1 (id int primary key, ${columnDefs.mkString(", ")})"
+
+  val CREATE_TABLE = CREATE_SIMPLE_TABLE.format("table1", columnDefs.mkString(", "))
+
   val INSERT =
     "insert into table1(id, col1, col2, col3, col4, col5, col6, col7, col8, col9) " +
       "values(111, 123, 'abc', ['a'], [22], {33,44}, {123: 'map_value'}, '2014-10-13 23:47', " +
@@ -56,18 +57,28 @@ class CassandraClientIntegrationSpec extends FunSpec with BeforeAndAfter with Be
 
 
   before {
-    LOG.info("TABLE STATEMENT: {}", TABLE)
+    LOG.info("TABLE STATEMENT: {}", CREATE_TABLE)
 
     val insertFuture = for {
       r0 <- session.execute(DROP)
-      r1 <- session.execute(TABLE)
+      r1 <- session.execute(CREATE_TABLE)
       r2 <- session.execute(INSERT)
     } yield r2
     Await.result(insertFuture, 1 second)
   }
 
+  override def beforeAll() = {
+    createCluster
+    populate(1)
+    startCluster
+    createKS(1)
+    client = new CassandraClient(Seq("localhost"))
+    session = client.createSession(keyspace)
+  }
+
   override def afterAll() = {
     client.close()
+    stopCluster
   }
 
   describe("CassandraClient") {

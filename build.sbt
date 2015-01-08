@@ -22,8 +22,7 @@ libraryDependencies ++= {
     "com.github.nscala-time"    %%  "nscala-time"          % "1.4.0",
     "com.typesafe.akka"         %%  "akka-testkit"         % akkaV % "test",
     "org.scalatest"             %%  "scalatest"            % scalaTestV % "test",
-    "org.mockito"               %   "mockito-core"         % mockitoV % "test",
-    "org.apache.commons"        %   "commons-exec"         % "1.2"    % "test" exclude ("junit", "junit")
+    "org.mockito"               %   "mockito-core"         % mockitoV % "test"
   )
 }
 

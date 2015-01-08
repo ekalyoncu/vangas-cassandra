@@ -38,10 +38,12 @@ import akka.io.Tcp.Connect
 import akka.io.Tcp.Received
 import net.vangas.cassandra.message.Prepare
 import net.vangas.cassandra.message.Query
+import VangasTestHelpers._
 
 class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
-  with FunSpecLike with ImplicitSender with BeforeAndAfter with BeforeAndAfterAll with OneInstancePerTest {
+  with VangasActorTestSupport with BeforeAndAfter {
 
+  val node1 = node(111)
   val responseHandlerProbe = TestProbe()
   val ioProbe = TestProbe()
   val streamContext = mock[StreamContext]
@@ -49,11 +51,7 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
   val connectionTimeout = 1 second
   val fixedTime = DateTime.now
 
-  val connectionActor = TestActorRef(new Connection(connectionTimeout, null, streamContext, streamIdExtractor) with MockConnectionComponents)
-
-  override def afterAll() {
-    system.shutdown()
-  }
+  val connectionActor = TestActorRef(new Connection(connectionTimeout, node1, streamContext, streamIdExtractor) with MockConnectionComponents)
 
   before {
     DateTimeUtils.setCurrentMillisFixed(fixedTime.getMillis)
@@ -67,18 +65,15 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
     it("should be ready for queries") {
       val eventProbe = TestProbe()
       system.eventStream.subscribe(eventProbe.ref, classOf[ConnectionReady])
-      ioProbe.expectMsg(Connect(null, timeout = Some(connectionTimeout)))
+      ioProbe.expectMsg(Connect(node1, timeout = Some(connectionTimeout)))
       makeConnected
       connectionActor.underlyingActor.cassandraConnection = self
-      connectionActor.underlyingActor.isReady should be(false)
       connectionActor ! Ready
-      connectionActor ! IsConnectionReady
-      connectionActor.underlyingActor.isReady should be(true)
-      expectMsg(true)
-      eventProbe.expectMsg(ConnectionReady(connectionActor, null))
+      eventProbe.expectMsg(ConnectionReady(connectionActor, node1))
     }
 
     it("should send startup request") {
+      responseHandlerProbe.expectMsg("Started")
       val id = 99.toShort
       when(streamContext.registerStream(RequestStream(connectionActor, Startup))).thenReturn(Some(id))
       connectionActor ! Connected(null, null)
@@ -90,6 +85,7 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
     }
 
     it("should redirect server responses to the ResponseHandler actor") {
+      responseHandlerProbe.expectMsg("Started")
       val res = ByteString.fromString("TEST_RESPONSE")
       makeConnected
       when(streamIdExtractor.streamId(res)).thenReturn(0.toShort)
@@ -100,6 +96,7 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
     }
 
     it("should not redirect server responses for unknown stream") {
+      responseHandlerProbe.expectMsg("Started")
       val res = ByteString.fromString("TEST_RESPONSE")
       makeConnected
       val unKnowStreamId: Short = 2
@@ -148,29 +145,28 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
       expectMsg(Close)
     }
 
-    it("should send RetryMessage on MaxConcurrentRequestException") {
+    it("should send MaxStreamIdReached msg when connection has no slot for new stream") {
       makeConnected
-      system.eventStream.subscribe(self, classOf[MaxStreamIdReached])
       when(streamContext.registerStream(RequestStream(self, Query("QUERY_TO_RETRY", null)))).thenReturn(None)
       connectionActor ! Query("QUERY_TO_RETRY", null)
-      expectMsg(MaxStreamIdReached(Query("QUERY_TO_RETRY", null), self, connectionActor, 3))
-      system.eventStream.unsubscribe(self, classOf[RetryFailedRequest])
-    }
-
-    it("should close connection") {
-      makeConnected
-      connectionActor ! CloseConnection
-      expectMsg(Close)
+      expectMsg(MaxStreamIdReached(connectionActor))
     }
 
     it("should clean expired streams") {
       makeConnected
-      system.eventStream.subscribe(self, classOf[MaxStreamIdReached])
       when(streamContext.registerStream(RequestStream(self, Query("test", null)))).thenReturn(None)
       connectionActor ! Query("test", null)
       expectMsgType[MaxStreamIdReached]
       verify(streamContext).cleanExpiredStreams()
-      system.eventStream.unsubscribe(self, classOf[RetryFailedRequest])
+    }
+
+    it("should restart connection when there it gets CommandFailure") {
+      ioProbe.expectMsg(Connect(node1, timeout = Some(connectionTimeout)))
+      connectionActor.underlyingActor.context.become(connectionActor.underlyingActor.connected)
+      system.eventStream.subscribe(self, classOf[ConnectionDefunct])
+      connectionActor ! CommandFailed(Write(ByteString.fromString("~TEST~")))
+      expectMsg(ConnectionDefunct(connectionActor, node1))
+      ioProbe.expectMsg(Connect(node1, timeout = Some(connectionTimeout)))
     }
   }
 

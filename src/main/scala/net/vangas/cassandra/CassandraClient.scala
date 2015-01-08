@@ -19,27 +19,44 @@ package net.vangas.cassandra
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
 
-import akka.actor.ActorSystem
+import akka.actor.{Props, ActorSystem}
 import net.vangas.cassandra.config.Configuration
-import net.vangas.cassandra.connection.{DefaultSession, Session}
+import net.vangas.cassandra.connection.{ConnectionPools, DefaultSession, Session}
+import net.vangas.cassandra.loadbalancing.LoadBalancer
 import org.slf4j.LoggerFactory
 
-class CassandraClient(nodeAddresses: Seq[String], port: Int = 9042) {
+/**
+ *
+ * @param nodes List of InetSocketAddress of nodes in the cluster
+ * @param config Configuration to be used for connection and queries to cassandra nodes
+ */
+class CassandraClient(nodes: Seq[InetSocketAddress], config: Configuration) {
   import net.vangas.cassandra.CassandraClient._
 
-  val id = clientId.incrementAndGet()
+  def this(nodes: Seq[InetSocketAddress]) { this(nodes, Configuration()) }
+
+  def this(nodeAddresses: Seq[String], port: Int = 9042) {
+    this(nodeAddresses.map(new InetSocketAddress(_, port)), Configuration())
+  }
+
+  private val loadBalancingPolicy = config.loadBalancingPolicy
+  loadBalancingPolicy.init(nodes)
+
+  private  val id = clientId.incrementAndGet()
+
   LOG.info(s"Creating CassandraClient-$id...")
+
   private implicit val system = ActorSystem(s"CassandraClient-$id")
+
+  private val loadBalancer = system.actorOf(Props(new LoadBalancer(loadBalancingPolicy)))
 
   /**
    * Creates a new session
    * @param keyspace keyspace to be queried
-   * @param config Configuration to be used for connection and queries to cassandra nodes
    * @return Session instance
    */
-  def createSession(keyspace: String, config: Configuration = Configuration()): Session = {
-    val nodes = nodeAddresses.map(new InetSocketAddress(_, port))
-    DefaultSession(keyspace, nodes, config)
+  def createSession(keyspace: String): Session = {
+    DefaultSession(keyspace, nodes, loadBalancer, config)
   }
 
   /**
@@ -48,6 +65,7 @@ class CassandraClient(nodeAddresses: Seq[String], port: Int = 9042) {
    * @param waitToClose True if client needs to block until client closes completely.
    */
   def close(waitToClose: Boolean = false): Unit = {
+    LOG.info(s"Closing CassandraClient-$id")
     system.shutdown()
     if (waitToClose) {
       system.awaitTermination()

@@ -18,21 +18,28 @@ package net.vangas.cassandra
 
 import akka.actor.{ActorLogging, ActorRef, Actor}
 
-class ForwardingActor(next: ActorRef) extends Actor with ActorLogging {
+class ForwardingActor(underlying: ActorRef) extends Actor with ActorLogging {
+
+  override def preStart(): Unit = {
+    log.info("Starting forwarding actor. Underlying: {}", underlying.path)
+    underlying ! "Started"
+  }
 
   override def postRestart(reason: Throwable): Unit = {
-    next ! "Restarted"
+    log.info("Restarting forwarding actor. Underlying: {}", underlying.path)
+    underlying ! "Restarted"
     super.postRestart(reason)
   }
 
   override def postStop(): Unit = {
-    next ! "Closed"
+    log.info("Stopped forwarding actor. Underlying: {}", underlying.path)
+    underlying ! "Closed"
   }
 
   def receive = {
     case msg =>
       val snd = sender()
-      log.info(s"Forwarding $msg from $snd to $next")
-      next.!(msg)(snd)
+      log.info(s"Forwarding $msg from $snd to $underlying")
+      underlying.!(msg)(snd)
   }
 }

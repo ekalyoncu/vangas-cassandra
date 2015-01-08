@@ -16,81 +16,106 @@
 
 package net.vangas.cassandra.connection
 
-import java.net.InetSocketAddress
 import java.util.concurrent.TimeoutException
-
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import net.vangas.cassandra.CassandraConstants._
 import net.vangas.cassandra._
 import net.vangas.cassandra.config.Configuration
+import net.vangas.cassandra.error.{RequestErrorCode, RequestError}
+import net.vangas.cassandra.exception.{QueryPrepareException, QueryExecutionException}
 import net.vangas.cassandra.message._
-import org.scalatest.Matchers._
-import org.scalatest._
+import org.scalatest.BeforeAndAfter
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
+import org.scalatest.mock.MockitoSugar._
+import org.mockito.Mockito.when
+import org.mockito.Mockito.verify
+import VangasTestHelpers._
 
-class DefaultSessionSpec extends TestKit(ActorSystem("DefaultSessionSystem"))
-  with FunSpecLike with BeforeAndAfterAll with OneInstancePerTest {
+class DefaultSessionSpec extends TestKit(ActorSystem("DefaultSessionSystem")) with VangasActorTestSupport with BeforeAndAfter {
 
-  val router = TestProbe()
-  val session = new DefaultSession("SESSION_KS", Configuration(), router.ref)
+  val requestLifeCycle = TestProbe()
+  val sessionActorBridge = mock[SessionActorBridge]
+  val session = new DefaultSession(1, "SESSION_KS", Configuration(), sessionActorBridge)
 
-  override def afterAll() {
-    system.shutdown()
+  before {
+    when(sessionActorBridge.createRequestLifecycle()).thenReturn(requestLifeCycle.ref)
   }
 
   describe("DefaultSession") {
     it("should execute simple query and return resultset") {
       val future = session.execute("simple_query")
-      router.expectMsgPF(){ case Query("simple_query", _) => true }
-      router.reply(Result(Void))
+      requestLifeCycle.expectMsg(SimpleStatement("simple_query"))
+      requestLifeCycle.reply(Result(Void))
+
       val result = Await.result(future, 1 second)
       result.size should be(0)
+      verify(sessionActorBridge).createRequestLifecycle()
     }
 
-    it("should timeout when server doesn't return in time") {
+    it("should execute simple query and return error") {
       val future = session.execute("simple_query")
-      router.expectMsgPF(){ case Query("simple_query", _) => true }
-      intercept[TimeoutException] { Await.result(future, 1 second) }
+      requestLifeCycle.expectMsg(SimpleStatement("simple_query"))
+      requestLifeCycle.reply(RequestError(RequestErrorCode.SYNTAX_ERROR, "~TEST~"))
+
+      intercept[QueryExecutionException] {
+        Await.result(future, 1 second)
+      }
+      verify(sessionActorBridge).createRequestLifecycle()
     }
 
-    it("should retry unprepared statement") {
-      val node = new InetSocketAddress("localhost", 1234)
-      val query = "prepare_query1"
-      val queryId = new PreparedId("id".getBytes)
-      val prepared = new Prepared(queryId, null, null)
-      val preparedStatement = new PreparedStatement(ExPrepared(prepared, query, null))
-      val future = session.execute(preparedStatement.bind())
-      router.expectMsgPF(){ case Execute(id, _) if id == queryId => true }
-      router.reply(NodeAwareError(Error(UNPREPARED, "msg"), node))
-      router.expectMsg(Prepare(query))
-      val newQueryId = new PreparedId("id2".getBytes)
-      val newPrepared = new Prepared(newQueryId, null, null)
-      router.reply(ExPrepared(newPrepared, query, node))
-      router.expectMsg(PrepareOnAllNodes(query, node))
-      router.expectMsgPF(){ case Execute(id, _) if id == newQueryId => true }
-      router.reply(Result(Void))
+    it("should throw exception for USE statement") {
+      val ex1 = intercept[IllegalArgumentException] {
+        Await.result(session.execute("USE new_ks"), 1 second)
+      }
+      val ex2 = intercept[IllegalArgumentException] {
+        Await.result(session.execute(SimpleStatement("USE new_ks")), 1 second)
+      }
+      ex1.getMessage should be(ex2.getMessage)
+      ex1.getMessage should be("USE statement is not supported in session. Please create new session to query different keyspace")
+    }
+
+    it("should throw timeoutexception when server doesn't return in time") {
+      val newSession = new DefaultSession(1, "SESSION_KS", Configuration(queryTimeout = 100 milliseconds), sessionActorBridge)
+      intercept[TimeoutException] {
+        Await.result(newSession.execute("timed out query"), 300 milliseconds)
+      }
+    }
+
+    it("should prepare statement") {
+      val prepareQuery = "prepare_query"
+      val future = session.prepare(prepareQuery)
+      requestLifeCycle.expectMsg(PrepareStatement(prepareQuery))
+      val prepared = Prepared(new PreparedId("ID".getBytes), null, null)
+      requestLifeCycle.reply(ExPrepared(prepared, prepareQuery, node(1111)))
+
       val result = Await.result(future, 1 second)
-      result.size should be(0)
-      router.expectNoMsg()
+      result.prepared() should be(ExPrepared(prepared, prepareQuery, node(1111)))
+      verify(sessionActorBridge).createRequestLifecycle()
+    }
+
+    it("should throw QueryPrepareException") {
+      val future = session.prepare("prepare_query")
+      requestLifeCycle.expectMsg(PrepareStatement("prepare_query"))
+      requestLifeCycle.reply(RequestError(RequestErrorCode.SYNTAX_ERROR, "~TEST~"))
+
+      intercept[QueryPrepareException] {
+        Await.result(future, 1 second)
+      }
+      verify(sessionActorBridge).createRequestLifecycle()
     }
 
     it("should close") {
       session.close()
-      router.expectMsg(CloseRouter)
-    }
+      verify(sessionActorBridge).closeSession()
 
-    it("should prepare on all hosts after successful prepare") {
-      val node = new InetSocketAddress("localhost", 1234)
-      val query = "prepare_query2"
-      val res = session.prepare(query)
-      router.expectMsgPF(){ case Prepare("prepare_query2") => true }
-      router.reply(ExPrepared(null, query, node))
-      router.expectMsg(PrepareOnAllNodes(query, node))
-      val result = Await.result(res, 1 second)
-      result shouldBe a[PreparedStatement]
+      intercept[IllegalStateException] {
+        Await.result(session.execute("query"), 1 second)
+      }
+      intercept[IllegalStateException] {
+        Await.result(session.prepare("query"), 1 second)
+      }
     }
   }
 

@@ -18,6 +18,7 @@ package net.vangas.cassandra.connection
 
 import akka.actor._
 import akka.io.Tcp._
+import net.vangas.cassandra.exception.ConnectionException
 import scala.concurrent.duration._
 import java.net.InetSocketAddress
 import net.vangas.cassandra.util.FrameUtils
@@ -52,13 +53,9 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
   extends Actor with ActorLogging { this: ConnectionComponents =>
   import context.system
 
-  val MAX_RETRY_COUNT = 3
-
   var cassandraConnection: ActorRef = _
 
   val responseHandler = context.actorOf(Props(createResponseHandlerActor))
-
-  var isReady = false
 
   ioManager ! Connect(nodeAddress, timeout = Some(connectionTimeout))
 
@@ -71,9 +68,12 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
     }
   }
 
+  override val supervisorStrategy =
+    OneForOneStrategy(maxNrOfRetries = 3, withinTimeRange = 1 minute) {SupervisorStrategy.defaultDecider}
+
   def receive = {
     case c @ Connected(remote, local) =>
-      log.info("Connected to remote address[{}]", remote)
+      log.info("Connected to node[{}] but connection still not ready to be used.", remote)
       cassandraConnection = sender()
       responseHandler tell (c, cassandraConnection)
       cassandraConnection ! Register(self)
@@ -84,7 +84,6 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
         case None =>
           context stop self
       }
-
 
     case CommandFailed(_: Connect) =>
       log.error("Cannot connect to node[{}]", nodeAddress)
@@ -102,8 +101,8 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
       }
 
     case Ready =>
-      isReady = true
       system.eventStream.publish(ConnectionReady(self, nodeAddress))
+      log.info("Connection is ready to be used.")
 
     case query: Query => doRequest(query, sender())
 
@@ -111,23 +110,21 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
 
     case execute: Execute => doRequest(execute, sender())
 
-    case RetryFailedRequest(originalRequest, numOfRetries) => doRequest(originalRequest, sender(), numOfRetries)
-
-    case CommandFailed(w: Write) => log.error(s"Command Failed. ACK:[${w.ack}]")
-
-    case CloseConnection => context stop self
+    case CommandFailed(w: Write) =>
+      val err = s"Command Failed. ACK:[${w.ack}]"
+      log.error(err)
+      system.eventStream.publish(ConnectionDefunct(self, nodeAddress))
+      throw new ConnectionException(err) //this will restart connection
 
     case _: ConnectionClosed => context stop self
-
-    case IsConnectionReady => sender ! isReady
   }
 
-  private def doRequest(request: RequestMessage, requester: ActorRef, numOfRetries: Int = MAX_RETRY_COUNT) {
+  private def doRequest(request: RequestMessage, requester: ActorRef) {
     streamContext.registerStream(RequestStream(requester, request)) match {
       case Some(streamId) => cassandraConnection ! Write(serializeFrame(streamId, request))
       case _ =>
         log.warning("Connection has reached max stream id limit for request:[{}]", request)
-        system.eventStream.publish(MaxStreamIdReached(request, requester, self, numOfRetries))
+        requester ! MaxStreamIdReached(self)
         streamContext.cleanExpiredStreams()
     }
   }

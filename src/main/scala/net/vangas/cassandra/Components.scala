@@ -16,7 +16,7 @@ trait ResponseHandlerComponents {
   def createAuthentication: Actor = new Authentication
 }
 
-trait ConnectionRouterComponents {
+trait ConnectionPoolsComponents {
   def createConnection(queryTimeOut: FiniteDuration,
                        connectionTimeout: FiniteDuration,
                        node: InetSocketAddress): Actor = {

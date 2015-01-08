@@ -43,21 +43,26 @@ class ResponseHandler(responseFrameFactory: Factory[ByteString, ResponseFrame] =
         case r @ Ready =>
           log.info("Got Ready message from server[{}]", node)
           requester ! r
+
         case Result(prepared: Prepared) =>
           log.debug("Got Prepared[{}] from server[{}]. Original Request: [{}]", prepared, node, originalRequest)
           originalRequest match {
             case Prepare(query) => requester ! ExPrepared(prepared, query, node)
             case x => log.error("Got different original request[{}] than Prepare", x)
           }
+
         case r: Result =>
           log.debug("Got Result[{}] from server[{}]", r, node)
           requester ! r
+
         case error @ Error(code, msg) =>
-          log.error("Error occurred. Code:[{}], Message: [{}], Original request: [{}]", code, msg, originalRequest)
+          log.error("Error occurred. Code:[{}], Message: [{}], Original request: [{}], Node[{}]", code, msg, originalRequest, node)
           requester ! NodeAwareError(error, node)
+
         case auth @ Authenticate(token) =>
           log.info("Authenticating...")
           authentication tell(auth, cassandraConnection)
+
         case x =>
           log.error(s"Unknown result body: [$body]")
       }

@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 import akka.actor.ActorRef
 import java.net.InetSocketAddress
 import akka.util.ByteString
-import net.vangas.cassandra.message.RequestMessage
+import net.vangas.cassandra.message.{Prepare, RequestMessage}
 import org.joda.time.DateTime
 
 package object cassandra {
@@ -29,15 +29,25 @@ package object cassandra {
 
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
-  case object IsConnectionReady
-  case object CloseConnection
-  case object CloseRouter
   case class RequestStream(requester: ActorRef, originalRequest: RequestMessage, creationTime: DateTime = DateTime.now())
   case class ReceivedData(data: ByteString, requestStream: RequestStream)
   case class ConnectionReady(connection: ActorRef, nodeAddress: InetSocketAddress)
+  case class ConnectionDefunct(connection: ActorRef, nodeAddress: InetSocketAddress)
 
-  case class MaxStreamIdReached(originalRequest: RequestMessage, requester: ActorRef, connection: ActorRef, numOfRetries: Int)
-  case class RetryFailedRequest(originalRequest: RequestMessage, numOfRetries: Int)
-  case class PrepareOnAllNodes(query: String, exceptThisNode: InetSocketAddress)
+  case object RequestLifecycleStarted
 
+  case class MaxStreamIdReached(connection: ActorRef)
+  case class PrepareOnAllNodes(prepare: Prepare, exceptThisNode: InetSocketAddress)
+
+  case object CreateQueryPlan
+  case class QueryPlan(nodes: Iterator[InetSocketAddress])
+  case class GetConnectionFor(node: InetSocketAddress)
+  case class ConnectionReceived(connection: ActorRef)
+  case class NoConnectionFor(node: InetSocketAddress)
+
+  //Server Events
+  case class NodeAdded(node: InetSocketAddress)
+  case class NodeRemoved(node: InetSocketAddress)
+  case class NodeUp(node: InetSocketAddress)
+  case class NodeDown(node: InetSocketAddress)
 }

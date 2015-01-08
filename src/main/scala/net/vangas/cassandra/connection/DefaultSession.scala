@@ -18,90 +18,91 @@ package net.vangas.cassandra.connection
 
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicInteger
-
-import akka.util.Timeout
 import akka.actor._
 import akka.pattern._
+import akka.util.Timeout
 import net.vangas.cassandra._
-import net.vangas.cassandra.CassandraConstants.UNPREPARED
 import net.vangas.cassandra.config.Configuration
-import net.vangas.cassandra.exception.{QueryPrepareException, QueryExecutionException}
+import net.vangas.cassandra.error.RequestError
+import net.vangas.cassandra.exception.{QueryExecutionException, QueryPrepareException}
 import net.vangas.cassandra.message._
-import scala.concurrent.{ExecutionContext, Promise, Future}
-import scala.concurrent.duration._
 import org.slf4j.LoggerFactory
 
-import scala.util.{Failure, Success}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
  * Session class which handles all requests for one keyspace.
  * Don't change keyspace (via 'USE' query) after session created.
  * If you need to query new keyspace, create new session.
  *
+ * @param sessionId Session id
  * @param keyspace keyspace to be queried.
  * @param config Configuration
- * @param connectionRouter Internal actor to route requests to connections in round-robin fashion.
+ * @param sessionActorBridge Interface between session and ActorSystem
  */
-final class DefaultSession private[connection](keyspace: String,
+final class DefaultSession private[connection](sessionId: Int,
+                                               keyspace: String,
                                                config: Configuration,
-                                               connectionRouter: ActorRef) extends Session {
+                                               sessionActorBridge: SessionActorBridge) extends Session {
 
   require(config != null, "Configuration object cannot be null!")
   require(config.queryConfig != null, "QueryConfig object cannot be null!")
 
   private[this] val LOG = LoggerFactory.getLogger(classOf[DefaultSession])
-
-  private val queryTimeout = FiniteDuration(config.queryTimeout, SECONDS)
+  private[this] var closed = false
 
   def prepare(query: String)(implicit executor: ExecutionContext): Future[PreparedStatement] = {
-    execute[PreparedStatement](Prepare(query)){
-      case (prepared @ ExPrepared(_, _, node), p) =>
-        p.success(new PreparedStatement(prepared))
-        connectionRouter ! PrepareOnAllNodes(query, node)
-      case (e: NodeAwareError, p) => p.failure(new QueryPrepareException(e.toString))
+    if (closed) {
+      return Future.failed(new IllegalStateException("Session is closed!"))
+    }
+    val requestLifeCycle = sessionActorBridge.createRequestLifecycle()
+
+    execute[PreparedStatement](PrepareStatement(query), requestLifeCycle) {
+      case (prepared: ExPrepared, p) => p.success(new PreparedStatement(prepared))
+      case (e: RequestError, p) => p.failure(new QueryPrepareException(e))
     }
   }
 
-  def execute(boundStatement: BoundStatement)(implicit executor: ExecutionContext): Future[ResultSet] = {
-    def executeBound(statement: BoundStatement, retryCount: Int = 0): Future[ResultSet] = {
-      execute[ResultSet](statement.executeRequest(config.queryConfig)){
-        case (result: Result, p) => p.success(ResultSet(result))
-        case (NodeAwareError(Error(UNPREPARED, _), node), p) =>
-          if (retryCount <= config.maxPrepareRetryCount) {
-            val query = statement.originalQuery
-            val params = boundStatement.params
-            LOG.warn(s"Query[$query] is not prepared on host[$node]. Retrying [attempt $retryCount] to prepare and execute...")
-            prepare(query) onComplete {
-              case Success(prepared) =>
-                LOG.debug(s"Query[$query] is now prepared on host[$node].")
-                p completeWith executeBound(prepared.bind(params), retryCount + 1)
-              case Failure(t) => p.failure(t)
-            }
-          }
-        case (e: NodeAwareError, p) => p.failure(new QueryExecutionException(e.toString))
+  def execute(statement: Statement)(implicit executor: ExecutionContext): Future[ResultSet] = {
+    def validateStatement(): Future[Statement] = {
+      statement match {
+        case SimpleStatement(query, _) if query.trim.toUpperCase.startsWith("USE") =>
+          val err = "USE statement is not supported in session. Please create new session to query different keyspace"
+          Future.failed(new IllegalArgumentException(err))
+        case _ => Future.successful(statement)
       }
     }
-    executeBound(boundStatement)
+
+    def doExecute(statement: Statement): Future[ResultSet] = {
+      val requestLifeCycle = sessionActorBridge.createRequestLifecycle()
+      execute[ResultSet](statement, requestLifeCycle) {
+        case (result: Result, p) => p.success(ResultSet(result))
+        case (e: RequestError, p) => p.failure(new QueryExecutionException(e))
+      }
+    }
+
+    if (closed) {
+      return Future.failed(new IllegalStateException("Session is closed!"))
+    }
+    validateStatement flatMap doExecute
   }
 
   def execute(query: String, params: Any*)(implicit executor: ExecutionContext): Future[ResultSet] = {
-    execute[ResultSet](Query(query, config.queryConfig.toQueryParameters(params))){
-      case (result: Result, p) => p.success(ResultSet(result))
-      case (e: NodeAwareError, p) => p.failure(new QueryExecutionException(e.toString))
-    }
+    execute(SimpleStatement(query, params))
   }
 
-  def close(): Unit = {
+  def close(): Future[Boolean] = {
     LOG.info("Closing session...")
-    connectionRouter ! CloseRouter
+    closed = true
+    sessionActorBridge.closeSession()
   }
 
-  private def execute[T](request: RequestMessage)
+  private def execute[T](statement: Statement, requestLifeCycle: ActorRef)
                         (func: (Any, Promise[T]) => Unit)
                         (implicit executor: ExecutionContext): Future[T] = {
-    implicit val timeout = Timeout(queryTimeout)
+    implicit val timeout = Timeout(config.queryTimeout)
     val p = Promise[T]()
-    (connectionRouter ? request).map(func(_, p))
+    (requestLifeCycle ? statement).map(func(_, p))
     p.future
   }
 
@@ -109,11 +110,19 @@ final class DefaultSession private[connection](keyspace: String,
 
 object DefaultSession {
   val sessionCounter = new AtomicInteger(0)
+  val LOG = LoggerFactory.getLogger("DefaultSession")
 
-  def apply(keyspace: String, nodes: Seq[InetSocketAddress], config: Configuration)(implicit system: ActorSystem): Session = {
-    val props = Props(new ConnectionRouter(keyspace, nodes, config) with ConnectionRouterComponents)
+  def apply(keyspace: String,
+            nodes: Seq[InetSocketAddress],
+            loadBalancer: ActorRef,
+            config: Configuration)(implicit system: ActorSystem): Session = {
     val sessionId = sessionCounter.incrementAndGet()
-    val connectionRouter = system.actorOf(props, s"connectionRouter-$sessionId")
-    new DefaultSession(keyspace, config, connectionRouter)
+    LOG.info(s"Creating session-$sessionId for keyspace[$keyspace].")
+
+    val connectionPools = system.actorOf(
+      Props(new ConnectionPools(keyspace, nodes, config) with ConnectionPoolsComponents),
+      s"ConnectionPools-$sessionId"
+    )
+    new DefaultSession(sessionId ,keyspace, config, new SessionActorBridge(loadBalancer, connectionPools, config))
   }
 }

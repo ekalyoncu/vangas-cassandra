@@ -5,12 +5,12 @@ import net.vangas.cassandra.ConsistencyLevel.ConsistencyLevel
 import scala.collection.mutable
 import net.vangas.cassandra.util.ByteUtils.valuesToByteString
 
-private[cassandra] class QueryParameters(consistency: ConsistencyLevel,
-                      values: Seq[_],
-                      skipMetaData: Boolean,
-                      pageSize: Int,
-                      pagingState: Option[ByteString] = None,
-                      serialConsistency: ConsistencyLevel = ConsistencyLevel.SERIAL) {
+private[cassandra] case class QueryParameters(consistency: ConsistencyLevel = ConsistencyLevel.ONE,
+                                              values: Seq[_] = Seq.empty,
+                                              skipMetaData: Boolean = false,
+                                              pageSize: Int = -1,
+                                              pagingState: Option[ByteString] = None,
+                                              serialConsistency: ConsistencyLevel = ConsistencyLevel.SERIAL) {
   var flagsSet = mutable.Set.empty[FlagOption.Value]
 
   val flags = {
@@ -38,7 +38,6 @@ private[cassandra] class QueryParameters(consistency: ConsistencyLevel,
     builder.result()
   }
 }
-
 
 object ConsistencyLevel extends Enumeration {
   type ConsistencyLevel = Value

@@ -35,17 +35,13 @@ import net.vangas.cassandra.message.ExPrepared
 import net.vangas.cassandra.message.Authenticate
 
 class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
-  with FunSpecLike with ImplicitSender with BeforeAndAfter with BeforeAndAfterAll with OneInstancePerTest {
+  with VangasActorTestSupport with BeforeAndAfter {
 
   val header = mock[Header]
   val factory = mock[Factory[ByteString, ResponseFrame]]
   val authenticationProbe = TestProbe()
   val responseHandler = TestActorRef(new ResponseHandler(factory) with MockResponseHandlerComponents)
   val fixedTime = DateTime.now
-
-  override def afterAll() {
-    system.shutdown()
-  }
 
   before {
     DateTimeUtils.setCurrentMillisFixed(fixedTime.getMillis)
@@ -98,6 +94,7 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
     }
 
     it("should handle authenticate response") {
+      authenticationProbe.expectMsg("Started")
       val res = ByteString.fromString("AUTH")
       when(factory.apply(res)).thenReturn(ResponseFrame(null, Authenticate(ByteString.fromString("token"))))
       responseHandler ! ReceivedData(res, RequestStream(self, null))

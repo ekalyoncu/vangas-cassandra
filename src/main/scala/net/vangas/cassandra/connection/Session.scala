@@ -17,7 +17,7 @@
 package net.vangas.cassandra.connection
 
 import scala.concurrent.{ExecutionContext, Future}
-import net.vangas.cassandra.{ResultSet, BoundStatement, PreparedStatement}
+import net.vangas.cassandra._
 
 /**
  * Session interface which implementations send requests to connections.
@@ -38,10 +38,10 @@ trait Session {
   /**
    * Executes prepared statement
    *
-   * @param boundStatement Prepared statement with bound variables
+   * @param statement Statement to be sent to cassandra node
    * @return Future of ResultSet
    */
-  def execute(boundStatement: BoundStatement)(implicit executor: ExecutionContext): Future[ResultSet]
+  def execute(statement: Statement)(implicit executor: ExecutionContext): Future[ResultSet]
 
   /**
    * Executes CQL query
@@ -55,6 +55,6 @@ trait Session {
   /**
    * Closes this session. You cannot reuse closed session.
    */
-  def close()
+  def close(): Future[Boolean]
 
 }

@@ -16,4 +16,6 @@
 
 package net.vangas.cassandra.exception
 
-class QueryPrepareException(msg: String) extends RuntimeException(msg)
+import net.vangas.cassandra.error.RequestError
+
+class QueryPrepareException(requestError: RequestError) extends RuntimeException(requestError.toString)

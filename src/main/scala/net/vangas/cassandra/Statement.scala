@@ -16,22 +16,41 @@
 
 package net.vangas.cassandra
 
-import net.vangas.cassandra.message.{ExPrepared, Execute}
+import net.vangas.cassandra.message._
 import net.vangas.cassandra.config.QueryConfig
 
-trait Statement
-
-class PreparedStatement(private[cassandra] val queryAwarePrepared: ExPrepared) extends Statement {
-  def bind(params: Any*): BoundStatement = new BoundStatement(this, params)
+trait Statement {
+  def toRequestMessage(implicit queryConfig: QueryConfig): RequestMessage
 }
 
-class BoundStatement(preparedStatement: PreparedStatement, val params: Seq[_]) extends Statement {
+case class PrepareStatement(query: String) extends Statement {
+  override def toRequestMessage(implicit queryConfig: QueryConfig) = Prepare(query)
+}
 
-  def originalQuery: String = preparedStatement.queryAwarePrepared.originalQuery
+case class SimpleStatement(query: String, params: Seq[_] = Seq.empty) extends Statement {
+  def toRequestMessage(implicit queryConfig: QueryConfig): RequestMessage = {
+    Query(query, queryConfig.toQueryParameters(params))
+  }
+}
 
-  def executeRequest(implicit queryConfig: QueryConfig): Execute = {
-    val queryId = preparedStatement.queryAwarePrepared.prepared.id
+class PreparedStatement(queryAwarePrepared: ExPrepared) {
+  def bind(params: Any*): BoundStatement = new BoundStatement(this, params)
+  private[cassandra] def prepared(): ExPrepared = queryAwarePrepared
+}
+
+case class BoundStatement(preparedStatement: PreparedStatement, params: Seq[_] = Seq.empty) extends Statement {
+
+  def originalQuery: String = preparedStatement.prepared().originalQuery
+
+  def toRequestMessage(implicit queryConfig: QueryConfig): RequestMessage = {
+    val queryId = preparedStatement.prepared().prepared.id
     Execute(queryId, queryConfig.toQueryParameters(params))
   }
 
+}
+
+object Statement {
+  def apply(query: String, params: Any*): SimpleStatement = {
+    new SimpleStatement(query, params)
+  }
 }

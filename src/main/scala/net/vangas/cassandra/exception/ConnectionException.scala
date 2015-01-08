@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Egemen Kalyoncu
+ * Copyright (C) 2015 Egemen Kalyoncu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,4 @@
 
 package net.vangas.cassandra.exception
 
-import net.vangas.cassandra.error.RequestError
-
-class QueryExecutionException(requestError: RequestError) extends RuntimeException(requestError.toString)
+class ConnectionException(msg: String) extends RuntimeException(msg)

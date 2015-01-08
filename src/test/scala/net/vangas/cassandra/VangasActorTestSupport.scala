@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Egemen Kalyoncu
+ * Copyright (C) 2015 Egemen Kalyoncu
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,20 @@
  * limitations under the License.
  */
 
-package net.vangas.cassandra.exception
+package net.vangas.cassandra
 
-import net.vangas.cassandra.error.RequestError
+import akka.testkit.{TestKit, ImplicitSender}
+import org.scalatest.{Matchers, OneInstancePerTest, BeforeAndAfterAll, FunSpecLike}
+import org.slf4j.LoggerFactory
 
-class QueryExecutionException(requestError: RequestError) extends RuntimeException(requestError.toString)
+trait VangasActorTestSupport extends FunSpecLike
+  with ImplicitSender with BeforeAndAfterAll with Matchers with OneInstancePerTest { self: TestKit =>
+
+  val LOG = LoggerFactory.getLogger(getClass)
+
+  override def afterAll() {
+    LOG.info("Shutting down actorsystem...")
+    system.shutdown()
+  }
+
+}

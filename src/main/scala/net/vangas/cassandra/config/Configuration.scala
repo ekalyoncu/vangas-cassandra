@@ -16,8 +16,12 @@
 
 package net.vangas.cassandra.config
 
+import net.vangas.cassandra.loadbalancing.{RoundRobinLoadBalancingPolicy, LoadBalancingPolicy}
+
+import scala.concurrent.duration._
+
 case class Configuration(connectionsPerNode: Int = 2,
-                         connectionTimeout: Long = 10,
-                         queryTimeout: Long = 10,
-                         maxPrepareRetryCount: Int = 3,
+                         connectionTimeout: FiniteDuration = 10.seconds,
+                         queryTimeout: FiniteDuration = 1.second,
+                         loadBalancingPolicy: LoadBalancingPolicy = new RoundRobinLoadBalancingPolicy,
                          queryConfig: QueryConfig = QueryConfig())

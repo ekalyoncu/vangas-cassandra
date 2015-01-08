@@ -31,7 +31,7 @@ object FrameUtils {
       case _: Query => QUERY
       case _: Prepare => PREPARE
       case _: Execute => EXECUTE
-      case x => throw new IllegalArgumentException(s"OpCode is not known for request[$x]")
+      case x => throw new IllegalArgumentException(s"Unknown OpCode[$x] for the request.")
     }
     RequestFrame(Header(VERSION_FOR_V3, FLAGS, streamId, opCode), body).serialize
   }
