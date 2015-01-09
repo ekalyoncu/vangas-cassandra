@@ -101,7 +101,7 @@ client.close()
 ```
 
 ## Build
-In order to build this project, you need a running cassandra instance locally. We have integration tests which need running cassandra instance. You can use [ccm](http://github.com/pcmanus/ccm) which makes it easy to create and teste cassandra cluster locally.
+In order to build this project, you need [ccm](http://github.com/pcmanus/ccm) which makes it easy to create and test cassandra cluster locally.
 
 ## Releases
 Vangas is not released yet because it's still under testing. But feel free to evaluate and create pull requests.

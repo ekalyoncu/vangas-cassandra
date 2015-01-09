@@ -43,14 +43,14 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val requestLifecycle = createRequestLifecycle()
       watch(requestLifecycle)
       val node1 = node(8888)
-      val response = (requestLifecycle ? Statement("test_query")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("test_query")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1)))
       connectionPools.expectMsg(GetConnectionFor(node1))
       connectionPools.reply(ConnectionReceived(connection.ref))
       connection.expectMsg(Query("test_query", QueryParameters()))
       connection.reply(Result(Void))
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
@@ -98,7 +98,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("retry_query")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -110,7 +110,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
     }
 
     it("should try next host for server-side errors") {
@@ -120,7 +120,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_2")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("retry_query_2")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -138,7 +138,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_2", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
     }
 
     it("should try next host when there is no connection for current host") {
@@ -147,7 +147,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_3")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("retry_query_3")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -160,7 +160,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_3", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
     }
 
     it("should retry next host when there is the connection reaches its max streamid") {
@@ -170,7 +170,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_4")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("retry_query_4")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -188,7 +188,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_4", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
     }
 
     it("should retry next host when currentConnection is defunct") {
@@ -198,7 +198,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_5")).asInstanceOf[Future[Result]]
+      val response = (requestLifecycle ? Statement("retry_query_5")).asInstanceOf[Future[ResultSet]]
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -213,7 +213,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_5", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) should be(Result(Void))
+      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
     }
 
     it("should not retry next host when other connection is defunct") {

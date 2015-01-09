@@ -76,7 +76,7 @@ final class DefaultSession private[connection](sessionId: Int,
     def doExecute(statement: Statement): Future[ResultSet] = {
       val requestLifeCycle = sessionActorBridge.createRequestLifecycle()
       execute[ResultSet](statement, requestLifeCycle) {
-        case (result: Result, p) => p.success(ResultSet(result))
+        case (resultSet: ResultSet, p) => p.success(resultSet)
         case (e: RequestError, p) => p.failure(new QueryExecutionException(e))
       }
     }

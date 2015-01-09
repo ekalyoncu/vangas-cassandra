@@ -34,7 +34,7 @@ trait LoadBalancingPolicy extends ServerEvents {
    * Creates new query plan for each query which contains list of nodes.
    * These nodes are tried until query is successfully executed.
    *
-   * It's used by actor only which means this method will be called by one thread at a time.
+   * It's only used by actor which means this method will be called by one thread at a time.
    * @return new QueryPlan
    */
   def newQueryPlan: QueryPlan

@@ -16,6 +16,7 @@
 
 package net.vangas.cassandra.connection
 
+import akka.event.Logging
 import net.vangas.cassandra.message._
 import akka.actor._
 import java.net.InetSocketAddress
@@ -26,7 +27,9 @@ import net.vangas.cassandra.message.ExPrepared
 import net.vangas.cassandra.message.Authenticate
 
 class ResponseHandler(responseFrameFactory: Factory[ByteString, ResponseFrame] = ResponseFrame)
-  extends Actor with ActorLogging { this: ResponseHandlerComponents =>
+  extends Actor { this: ResponseHandlerComponents =>
+
+  val log = Logging(context.system.eventStream, "ResponseHandler")
 
   val authentication = context.actorOf(Props(createAuthentication))
   var cassandraConnection: ActorRef = _

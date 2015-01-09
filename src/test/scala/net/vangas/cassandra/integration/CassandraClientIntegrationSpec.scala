@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-package net.vangas.cassandra
+package net.vangas.cassandra.integration
 
 import java.net.InetAddress
 
+import net.vangas.cassandra._
 import net.vangas.cassandra.connection.Session
 import org.joda.time.DateTime
 import org.scalatest.Matchers._
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, FunSpec}
+
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._

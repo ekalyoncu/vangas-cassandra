@@ -39,7 +39,7 @@ class ConnectionPools(keyspace: String,
   nodes.foreach { node =>
     val hostName = node.getHostName
     for(i <- 1 to config.connectionsPerNode) {
-      context.actorOf(Props(createConnection(config.queryTimeout, config.connectionTimeout, node)), s"${hostName}_connection$i")
+      context.actorOf(Props(createConnection(config.queryTimeout, config.connectionTimeout, node)), s"${hostName}_$i")
     }
   }
 

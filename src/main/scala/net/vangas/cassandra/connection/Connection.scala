@@ -17,6 +17,7 @@
 package net.vangas.cassandra.connection
 
 import akka.actor._
+import akka.event.Logging
 import akka.io.Tcp._
 import net.vangas.cassandra.exception.ConnectionException
 import scala.concurrent.duration._
@@ -50,8 +51,10 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
                                     nodeAddress: InetSocketAddress,
                                     streamContext: StreamContext,
                                     streamIdExtractor: StreamIdExtractor)
-  extends Actor with ActorLogging { this: ConnectionComponents =>
+  extends Actor { this: ConnectionComponents =>
   import context.system
+
+  val log = Logging(system.eventStream, "Connection_" + self.path.name)
 
   var cassandraConnection: ActorRef = _
 

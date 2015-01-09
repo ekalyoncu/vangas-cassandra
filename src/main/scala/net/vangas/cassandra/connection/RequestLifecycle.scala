@@ -114,9 +114,14 @@ class RequestLifecycle(loadBalancer: ActorRef,
         log.error("Query is timed out!")
         context stop self
 
-      case result: ResponseMessage =>
-        ctx.requester ! result
+      case result: Result =>
+        ctx.requester ! ResultSet(result)
         log.debug("Sending result back to requester")
+        context stop self
+
+      case responseMessage: ResponseMessage =>
+        ctx.requester ! responseMessage
+        log.debug("Sending server response[{}] back to requester", responseMessage.getClass)
         context stop self
 
       case unknownMsg =>
@@ -125,7 +130,6 @@ class RequestLifecycle(loadBalancer: ActorRef,
         context stop self
     }
 
-    //TODO: Can we retry next node when query timeout on one host?
     private def readyToTryNextNode: Receive = {
       case NoConnectionFor(node) =>
         log.debug("There is no live connection for host[{}]", node)

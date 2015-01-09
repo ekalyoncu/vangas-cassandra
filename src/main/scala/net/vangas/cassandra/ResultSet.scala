@@ -20,27 +20,30 @@ import net.vangas.cassandra.message._
 import net.vangas.cassandra.message.SchemaChange
 import net.vangas.cassandra.message.SetKeyspace
 
-trait ResultSet extends Iterable[Row]
+trait ResultSet extends Iterable[Row] {
+  def executionInfo(): ExecutionInfo
+}
 
 /**
  * For Result kind: VOID, SET_KEYSPACE, SCHEMA_CHANGE
  */
 class EmptyResultSet extends ResultSet {
   def iterator: Iterator[Row] = Iterator.empty
+  def executionInfo(): ExecutionInfo = ExecutionInfo()
 }
 
-class SinglePageResultSet(rows: Iterable[Row]) extends ResultSet {
+class SinglePageResultSet(rows: Iterable[Row], val executionInfo: ExecutionInfo) extends ResultSet {
   def iterator: Iterator[Row] = rows.iterator
 }
 
 //TODO: next and hasNext should get data from server asynchronously and this is not the place to make async requests.
 class PaginatedResultSet(rows: Rows) extends ResultSet {
-
   def iterator: Iterator[Row] = new Iterator[Row] {
     def hasNext: Boolean = ???
 
     def next(): Row = ???
   }
+  def executionInfo(): ExecutionInfo = ???
 }
 
 
@@ -48,11 +51,11 @@ object ResultSet {
 
   val empty = new EmptyResultSet
 
-  def apply(result: Result): ResultSet = {
+  def apply(result: Result, executionInfo: ExecutionInfo = ExecutionInfo()): ResultSet = {
     result.body match {
       case Void => empty
       case rows: Rows if rows.metaData.hasMorePages => new PaginatedResultSet(rows)
-      case rows: Rows => new SinglePageResultSet(rows.content)
+      case rows: Rows => new SinglePageResultSet(rows.content, executionInfo)
       case SetKeyspace(name) => empty //TODO:
       case SchemaChange(_, _, _)  => empty //TODO:
       case _ => throw new IllegalArgumentException(s"Unknown kind for result: [$result]")

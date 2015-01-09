@@ -47,7 +47,7 @@ class DefaultSessionSpec extends TestKit(ActorSystem("DefaultSessionSystem")) wi
     it("should execute simple query and return resultset") {
       val future = session.execute("simple_query")
       requestLifeCycle.expectMsg(SimpleStatement("simple_query"))
-      requestLifeCycle.reply(Result(Void))
+      requestLifeCycle.reply(new EmptyResultSet)
 
       val result = Await.result(future, 1 second)
       result.size should be(0)
