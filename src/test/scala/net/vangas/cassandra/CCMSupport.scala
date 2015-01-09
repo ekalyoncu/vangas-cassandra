@@ -21,9 +21,14 @@ trait CCMSupport extends BeforeAndAfterAll { this: Suite =>
     if (fullCcmPath != null) fullCcmPath else "ccm"
   }
 
-  def createCluster = {
+  def createCluster(nodes: Int) = {
     LOG.info(s"Creating cluster $cluster...")
-    Seq(ccmPath, "create", s"$cluster", "-v", s"$CASSANDRA_VERSION").!
+    Seq(ccmPath, "create", s"$cluster", "-n" , s"$nodes" , "-v", s"$CASSANDRA_VERSION").!
+  }
+
+  def createClusterWith2DC(nodesInDC1: Int, nodesInDC2: Int) = {
+    LOG.info(s"Creating cluster $cluster...")
+    Seq(ccmPath, "create", s"$cluster", "-n" , s"$nodesInDC1:$nodesInDC2" , "-v", s"$CASSANDRA_VERSION").!
   }
 
   def populate(nodes: Int) = {
@@ -46,5 +51,18 @@ trait CCMSupport extends BeforeAndAfterAll { this: Suite =>
     LOG.info(s"Creating keyspace[$keyspace] in cluster $cluster...")
     (Seq("echo", CREATE_KEY_SPACE.format(replication)) #| Seq(ccmPath, "node1", "cqlsh")).!
   }
+
+  def setupCluster(nodes: Int)(runTest: => Unit) {
+    try {
+      createCluster(nodes)
+      startCluster
+      createKS(1)
+
+      runTest
+    } finally {
+      stopCluster
+    }
+  }
+
 
 }

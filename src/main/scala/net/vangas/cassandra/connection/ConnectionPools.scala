@@ -77,7 +77,7 @@ class ConnectionPools(keyspace: String,
   def ready: Receive = connectionLifeCycle orElse {
     case GetConnectionFor(node) =>
       pools(node).nextConnection match {
-        case Some(connection) => sender ! ConnectionReceived(connection)
+        case Some(connection) => sender ! ConnectionReceived(connection, node)
         case None => sender ! NoConnectionFor(node)
       }
 

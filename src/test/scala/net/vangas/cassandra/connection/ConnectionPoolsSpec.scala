@@ -84,7 +84,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
       val connectionPools = newConnectionPools()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       connectionPools ! GetConnectionFor(node1)
-      expectMsg(ConnectionReceived(connection1.ref))
+      expectMsg(ConnectionReceived(connection1.ref, node1))
     }
 
     it("should return no connection msg when host has no connection") {
@@ -137,7 +137,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
 
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
 
-      expectMsg(ConnectionReceived(connection1.ref))
+      expectMsg(ConnectionReceived(connection1.ref, node1))
 
       connection1.expectMsgPF(){ case Query("USE TEST_KS", _) => true }
       val pools = connectionPools.underlyingActor.pools

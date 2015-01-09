@@ -24,6 +24,7 @@ import net.vangas.cassandra._
 import net.vangas.cassandra.config.Configuration
 import net.vangas.cassandra.error.{RequestErrorCode, RequestError}
 import net.vangas.cassandra.message._
+import scala.collection.mutable
 
 /**
  * Stateful actor which is responsible for the lifecycle of a request
@@ -39,6 +40,7 @@ class RequestLifecycle(loadBalancer: ActorRef,
 
   implicit val queryConfig = config.queryConfig
 
+  val triedNodes = new mutable.ListBuffer[InetSocketAddress]()
   var currentConnection: Option[ActorRef] = None
 
   context.setReceiveTimeout(config.queryTimeout)
@@ -79,11 +81,12 @@ class RequestLifecycle(loadBalancer: ActorRef,
     def receive: Receive = readyToTryNextNode orElse readyForResponse
 
     private def readyForResponse: Receive = {
-      case ConnectionReceived(connection) =>
+      case ConnectionReceived(connection, node) =>
+        triedNodes += node
         currentConnection = Option(connection)
         context.watch(connection)
         val request = ctx.statement.toRequestMessage
-        log.debug("Sending request[{}] to connection[{}]...", request, connection.path)
+        log.debug("Sending request[{}] to connection[{}] on node[{}]...", request, connection.path, node)
         connection ! request
 
       case NodeAwareError(Error(UNPREPARED, msg), node) =>
@@ -115,7 +118,7 @@ class RequestLifecycle(loadBalancer: ActorRef,
         context stop self
 
       case result: Result =>
-        ctx.requester ! ResultSet(result)
+        ctx.requester ! ResultSet(result, ExecutionInfo(triedNodes.toSeq))
         log.debug("Sending result back to requester")
         context stop self
 

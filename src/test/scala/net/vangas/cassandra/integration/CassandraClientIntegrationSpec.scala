@@ -33,8 +33,8 @@ class CassandraClientIntegrationSpec extends FunSpec with CCMSupport with Before
   val cluster = "test_cluster1"
   val keyspace = "test_ks1"
 
-  var client: CassandraClient = _
-  var session: Session = _
+  lazy val client = new CassandraClient(Seq("localhost"))
+  lazy val session = client.createSession(keyspace)
 
   val columnDefs = Seq(
     "col1 int",
@@ -48,13 +48,13 @@ class CassandraClientIntegrationSpec extends FunSpec with CCMSupport with Before
     "col9 inet"
   )
 
-  val DROP = "drop table if exists table1"
+  val DROP = "DROP TABLE IF EXISTS table1"
 
   val CREATE_TABLE = CREATE_SIMPLE_TABLE.format("table1", columnDefs.mkString(", "))
 
   val INSERT =
-    "insert into table1(id, col1, col2, col3, col4, col5, col6, col7, col8, col9) " +
-      "values(111, 123, 'abc', ['a'], [22], {33,44}, {123: 'map_value'}, '2014-10-13 23:47', " +
+    "INSERT INTO table1(id, col1, col2, col3, col4, col5, col6, col7, col8, col9) " +
+      "VALUES(111, 123, 'abc', ['a'], [22], {33,44}, {123: 'map_value'}, '2014-10-13 23:47', " +
       "a5c3921d-294a-41bc-8aff-6be0b5d17213, '192.168.3.3')"
 
 
@@ -70,12 +70,9 @@ class CassandraClientIntegrationSpec extends FunSpec with CCMSupport with Before
   }
 
   override def beforeAll() = {
-    createCluster
-    populate(1)
+    createCluster(1)
     startCluster
     createKS(1)
-    client = new CassandraClient(Seq("localhost"))
-    session = client.createSession(keyspace)
   }
 
   override def afterAll() = {

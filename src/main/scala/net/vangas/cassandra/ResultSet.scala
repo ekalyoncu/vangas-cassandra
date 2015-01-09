@@ -27,9 +27,8 @@ trait ResultSet extends Iterable[Row] {
 /**
  * For Result kind: VOID, SET_KEYSPACE, SCHEMA_CHANGE
  */
-class EmptyResultSet extends ResultSet {
+class EmptyResultSet(val executionInfo: ExecutionInfo = ExecutionInfo()) extends ResultSet {
   def iterator: Iterator[Row] = Iterator.empty
-  def executionInfo(): ExecutionInfo = ExecutionInfo()
 }
 
 class SinglePageResultSet(rows: Iterable[Row], val executionInfo: ExecutionInfo) extends ResultSet {
@@ -53,7 +52,7 @@ object ResultSet {
 
   def apply(result: Result, executionInfo: ExecutionInfo = ExecutionInfo()): ResultSet = {
     result.body match {
-      case Void => empty
+      case Void => new EmptyResultSet(executionInfo)
       case rows: Rows if rows.metaData.hasMorePages => new PaginatedResultSet(rows)
       case rows: Rows => new SinglePageResultSet(rows.content, executionInfo)
       case SetKeyspace(name) => empty //TODO:

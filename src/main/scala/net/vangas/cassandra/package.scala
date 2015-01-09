@@ -42,7 +42,7 @@ package object cassandra {
   case object CreateQueryPlan
   case class QueryPlan(nodes: Iterator[InetSocketAddress])
   case class GetConnectionFor(node: InetSocketAddress)
-  case class ConnectionReceived(connection: ActorRef)
+  case class ConnectionReceived(connection: ActorRef, node: InetSocketAddress)
   case class NoConnectionFor(node: InetSocketAddress)
 
   //Server Events

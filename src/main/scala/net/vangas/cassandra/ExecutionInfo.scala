@@ -18,4 +18,4 @@ package net.vangas.cassandra
 
 import java.net.InetSocketAddress
 
-case class ExecutionInfo(triedHosts: Seq[InetSocketAddress] = Seq.empty)
+case class ExecutionInfo(triedNodes: Seq[InetSocketAddress] = Seq.empty)

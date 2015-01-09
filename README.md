@@ -69,7 +69,6 @@ There are syntactic sugars which removes boilerplate codes while processing Resu
 ```scala
 import net.vangas.cassandra.pimped._
 ```
-
 ```scala
 session.execute("SELECT * FROM users").mapRows { row =>
   //convert to your case class

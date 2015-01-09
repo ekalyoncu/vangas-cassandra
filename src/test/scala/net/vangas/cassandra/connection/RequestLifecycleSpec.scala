@@ -47,10 +47,13 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1)))
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection.ref))
+      connectionPools.reply(ConnectionReceived(connection.ref, node1))
       connection.expectMsg(Query("test_query", QueryParameters()))
       connection.reply(Result(Void))
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+
+      val resultSet = Await.result(response, 2 seconds)
+      resultSet.executionInfo().triedNodes should be(Seq(node1))
+
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
@@ -102,15 +105,16 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       connection1.ref ! PoisonPill
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node2))
 
       connection2.expectMsg(Query("retry_query", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+      val resultSet = Await.result(response, 2 seconds)
+      resultSet.executionInfo().triedNodes should be(Seq(node1, node2))
     }
 
     it("should try next host for server-side errors") {
@@ -125,11 +129,11 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
 
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       requestLifecycle ! NodeAwareError(Error(OVERLOADED, "~TEST1~"), node1)
 
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node1))
 
       //killing previous connection should not trigger Terminated msg
       //because we should unwatch previous connections
@@ -155,12 +159,13 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connectionPools.reply(NoConnectionFor(node1))
 
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node2))
 
       connection2.expectMsg(Query("retry_query_3", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+      val resultSet = Await.result(response, 2 seconds)
+      resultSet.executionInfo().triedNodes should be(Seq(node2))
     }
 
     it("should retry next host when there is the connection reaches its max streamid") {
@@ -174,12 +179,12 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       connection1.expectMsg(Query("retry_query_4", QueryParameters()))
       requestLifecycle ! MaxStreamIdReached(connection1.ref)
 
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node2))
 
       //killing previous connection should not trigger Terminated msg
       //because we should unwatch previous connections
@@ -202,13 +207,13 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       connection1.expectMsg(Query("retry_query_5", QueryParameters()))
 
       system.eventStream.publish(ConnectionDefunct(connection1.ref, node1))
 
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node2))
 
       connection2.expectMsg(Query("retry_query_5", QueryParameters()))
       connection2.reply(Result(Void))
@@ -228,7 +233,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.reply(QueryPlan(Iterator(node1)))
 
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       connection1.expectMsg(Query("retry_query_6", QueryParameters()))
 
       system.eventStream.publish(ConnectionDefunct(connection0.ref, node1))
@@ -253,7 +258,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
 
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       requestLifecycle ! NodeAwareError(Error(INVALID_QUERY, "~TEST2~"), node1)
       connectionPools.expectNoMsg()
 
@@ -303,7 +308,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
-      connectionPools.reply(ConnectionReceived(connection1.ref))
+      connectionPools.reply(ConnectionReceived(connection1.ref, node1))
 
       connection1.expectMsg(Execute(new PreparedId("ID".getBytes), QueryParameters()))
 
@@ -312,11 +317,10 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection1.expectMsg(Prepare("unprepared_query"))
 
       connectionPools.expectMsg(GetConnectionFor(node2))
-      connectionPools.reply(ConnectionReceived(connection2.ref))
+      connectionPools.reply(ConnectionReceived(connection2.ref, node2))
 
       connection2.expectMsg(Execute(new PreparedId("ID".getBytes), QueryParameters()))
     }
-
   }
 
 }
