@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 trait VangasTestHelpers {
 
   def node(port: Int) = new InetSocketAddress("localhost", port)
+  def node(host: String, port: Int = 9042) = new InetSocketAddress(host, port)
 
 }
 

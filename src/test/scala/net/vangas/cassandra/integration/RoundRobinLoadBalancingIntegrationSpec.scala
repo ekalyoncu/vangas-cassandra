@@ -16,14 +16,46 @@
 
 package net.vangas.cassandra.integration
 
-import net.vangas.cassandra.CCMSupport
+import net.vangas.cassandra.{ResultSet, CassandraClient, CCMSupport}
 import org.scalatest.{BeforeAndAfter, BeforeAndAfterAll, FunSpec}
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
+import net.vangas.cassandra.VangasTestHelpers._
 
 class RoundRobinLoadBalancingIntegrationSpec extends FunSpec with CCMSupport with BeforeAndAfterAll with BeforeAndAfter {
 
   val cluster = "rrlb_cluster"
   val keyspace = "rrlb_ks1"
 
+  lazy val client = new CassandraClient(Seq("127.0.0.1", "127.0.0.2"))
+  lazy val session = client.createSession(keyspace)
 
+  override def afterAll() = {
+    client.close()
+  }
 
+  describe("RoundRobinLoadBalancingPolicy") {
+    it("should second host when first is down in one dc") {
+      setupCluster(2, 2) {
+        val insertFuture = for {
+          r0 <- session.execute("DROP TABLE IF EXISTS table1")
+          r1 <- session.execute("CREATE TABLE table1 (id int PRIMARY KEY, name text)")
+          r2 <- session.execute("INSERT INTO table1(id, name) VALUES(1, 'test1')")
+        } yield r2
+        Await.result(insertFuture, 1 second)
+
+        //this is 3rd request to session
+        query().executionInfo().triedNodes should be(Seq(node("127.0.0.2")))
+
+        stopNode(1)
+
+        query().executionInfo().triedNodes should be(Seq(node("127.0.0.2")))
+      }
+    }
+  }
+
+  private def query(): ResultSet = Await.result(session.execute("SELECT * FROM table1"), 1 second)
 }
+
+

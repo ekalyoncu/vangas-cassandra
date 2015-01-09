@@ -50,7 +50,10 @@ class RoundRobinLoadBalancingPolicy extends LoadBalancingPolicy {
       var idx = index
       var remaining = liveNodes.size
       val nodesToRequest = Seq(liveNodes:_*) //Make immutable copy of liveNodes
-      LOG.debug(s"Nodes:[${nodesToRequest.mkString(",")}] to be queried for new QueryPlan")
+
+      if (LOG.isDebugEnabled) {
+        LOG.debug(s"Nodes:[${nodesToRequest.mkString(",")}] to be queried for new QueryPlan")
+      }
 
       override def hasNext: Boolean = remaining > 0
       override def next(): InetSocketAddress = {

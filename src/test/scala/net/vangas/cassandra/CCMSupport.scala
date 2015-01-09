@@ -1,18 +1,23 @@
 package net.vangas.cassandra
 
 import scala.sys.process._
-import org.scalatest.{Suite, BeforeAndAfterAll}
+import org.scalatest.{Matchers, Suite, BeforeAndAfterAll}
 import org.slf4j.LoggerFactory
 
-trait CCMSupport extends BeforeAndAfterAll { this: Suite =>
+trait CCMSupport extends BeforeAndAfterAll with Matchers { this: Suite =>
 
   val LOG = LoggerFactory.getLogger(getClass)
 
   val cluster: String
   val keyspace: String
 
-  lazy val CREATE_KEY_SPACE = s"CREATE KEYSPACE $keyspace WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : %d };"
-  lazy val CREATE_SIMPLE_TABLE = "CREATE TABLE %s (id int PRIMARY KEY, %s);"
+  lazy val CREATE_SIMPLE_KEY_SPACE =
+    s"CREATE KEYSPACE $keyspace WITH replication = { 'class' : 'SimpleStrategy', 'replication_factor' : %d };"
+
+  lazy val CREATE_MULTI_DC_KEY_SPACE =
+    s"CREATE KEYSPACE $keyspace WITH replication = { 'class' : 'NetworkTopologyStrategy', 'dc1' : %d, 'dc2' : %d};"
+
+  lazy val CREATE_SIMPLE_TABLE = "CREATE TABLE %s (id int PRIMARY KEY, %s)"
 
   val CASSANDRA_VERSION = "2.1.0"
 
@@ -31,9 +36,9 @@ trait CCMSupport extends BeforeAndAfterAll { this: Suite =>
     Seq(ccmPath, "create", s"$cluster", "-n" , s"$nodesInDC1:$nodesInDC2" , "-v", s"$CASSANDRA_VERSION").!
   }
 
-  def populate(nodes: Int) = {
-    LOG.info(s"Populating $cluster with $nodes nodes...")
-    Seq(ccmPath, "populate", "-n", s"$nodes").!
+  def stopNode(nodeNr: Int) = {
+    LOG.info(s"Stopping node$nodeNr...")
+    Seq(ccmPath, s"node$nodeNr", "stop").!
   }
 
   def startCluster = {
@@ -49,14 +54,14 @@ trait CCMSupport extends BeforeAndAfterAll { this: Suite =>
 
   def createKS(replication: Int) = {
     LOG.info(s"Creating keyspace[$keyspace] in cluster $cluster...")
-    (Seq("echo", CREATE_KEY_SPACE.format(replication)) #| Seq(ccmPath, "node1", "cqlsh")).!
+    (Seq("echo", CREATE_SIMPLE_KEY_SPACE.format(replication)) #| Seq(ccmPath, "node1", "cqlsh")).!
   }
 
-  def setupCluster(nodes: Int)(runTest: => Unit) {
+  def setupCluster(nodes: Int, replicationFactor: Int = 1)(runTest: => Unit) {
     try {
       createCluster(nodes)
       startCluster
-      createKS(1)
+      createKS(replicationFactor)
 
       runTest
     } finally {
