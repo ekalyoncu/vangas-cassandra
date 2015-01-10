@@ -57,12 +57,30 @@ trait CCMSupport extends BeforeAndAfterAll with Matchers { this: Suite =>
     (Seq("echo", CREATE_SIMPLE_KEY_SPACE.format(replication)) #| Seq(ccmPath, "node1", "cqlsh")).!
   }
 
+  def createKSWith2DC(replicationInDC1: Int, replicationInDC2: Int) = {
+    LOG.info(s"Creating keyspace[$keyspace] in cluster $cluster...")
+    (Seq("echo", CREATE_MULTI_DC_KEY_SPACE.format(replicationInDC1, replicationInDC2)) #| Seq(ccmPath, "node1", "cqlsh")).!
+  }
+
   def setupCluster(nodes: Int, replicationFactor: Int = 1)(runTest: => Unit) {
     try {
       createCluster(nodes)
       startCluster
       createKS(replicationFactor)
+      runTest
+    } finally {
+      stopCluster
+    }
+  }
 
+  def setupClusterWith2DC(nodesInDC1: Int,
+                          nodesInDC2: Int,
+                          replicationInDC1: Int,
+                          replicationInDC2: Int)(runTest: => Unit) {
+    try {
+      createClusterWith2DC(nodesInDC1, nodesInDC2)
+      startCluster
+      createKSWith2DC(replicationInDC1, replicationInDC2)
       runTest
     } finally {
       stopCluster

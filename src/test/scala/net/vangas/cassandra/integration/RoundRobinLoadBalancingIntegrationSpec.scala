@@ -45,7 +45,6 @@ class RoundRobinLoadBalancingIntegrationSpec extends FunSpec with CCMSupport wit
         } yield r2
         Await.result(insertFuture, 1 second)
 
-        //this is 3rd request to session
         query().executionInfo().triedNodes should be(Seq(node("127.0.0.2")))
 
         stopNode(1)

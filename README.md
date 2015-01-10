@@ -13,7 +13,7 @@ This driver is not a wrapper on [cassandra-java-driver](https://github.com/datas
 * Execute
 * Retry of unprepared queries
 * ConnectionPool
-* Retry of failed queries if Connection reaches max concurrent request limit which is 128 (limitation of current cassandra protocol)
+* LoadBalancing policy
 * [Pagination](http://www.datastax.com/documentation/cql/3.0/cql/cql_using/paging_c.html) using token function
 * Most of [data-types](http://www.datastax.com/documentation/cql/3.0/cql/cql_reference/cql_data_types_c.html) except Tuples and Custom types
 
