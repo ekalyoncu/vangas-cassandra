@@ -16,23 +16,21 @@
 
 package net.vangas.cassandra.connection
 
-import net.vangas.cassandra.message._
-import org.scalatest.{OneInstancePerTest, BeforeAndAfterAll, BeforeAndAfter, FunSpecLike}
-import org.mockito.Mockito.when
-import akka.testkit.{TestProbe, TestActorRef, ImplicitSender, TestKit}
-import akka.actor.{Actor, ActorSystem}
-import akka.util.ByteString
-import scala.concurrent.duration._
-import org.scalatest.Matchers._
-import org.scalatest.mock.MockitoSugar._
+import java.net.InetAddress
+
+import akka.actor.ActorSystem
+import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import akka.util.{ByteString, ByteStringBuilder}
+import net.vangas.cassandra.CassandraConstants._
+import net.vangas.cassandra.VangasTestHelpers._
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.TopologyChangeType._
+import net.vangas.cassandra.message.{ExPrepared, _}
+import net.vangas.cassandra.{Header, RequestStream, byteOrder, _}
 import org.joda.time.{DateTime, DateTimeUtils}
-import java.net.InetSocketAddress
-import net.vangas.cassandra._
-import net.vangas.cassandra.Header
-import akka.io.Tcp.Connected
-import net.vangas.cassandra.RequestStream
-import net.vangas.cassandra.message.ExPrepared
-import net.vangas.cassandra.message.Authenticate
+import org.mockito.Mockito.when
+import org.scalatest.BeforeAndAfter
+import org.scalatest.mock.MockitoSugar._
 
 class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
   with VangasActorTestSupport with BeforeAndAfter {
@@ -40,7 +38,7 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
   val header = mock[Header]
   val factory = mock[Factory[ByteString, ResponseFrame]]
   val authenticationProbe = TestProbe()
-  val responseHandler = TestActorRef(new ResponseHandler(factory) with MockResponseHandlerComponents)
+  val responseHandler = TestActorRef(new ResponseHandler(node(1111), factory))
   val fixedTime = DateTime.now
 
   before {
@@ -52,11 +50,6 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
   }
 
   describe("ResponseHandler") {
-    it("should register cassandra connection") {
-      responseHandler ! Connected(new InetSocketAddress("localhost", 9042), null)
-      responseHandler.underlyingActor.node should be (new InetSocketAddress("localhost", 9042))
-      responseHandler.underlyingActor.cassandraConnection should be (self)
-    }
 
     it("should handle ready response") {
       val res = ByteString.fromString("READY")
@@ -75,35 +68,61 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
     }
 
     it("should handle prepared response") {
-      responseHandler.underlyingActor.node = new InetSocketAddress("localhost", 1234)
       val requester = TestProbe()
       val res = ByteString.fromString("PREPARED")
       val prepared = Prepared(new PreparedId("id".getBytes), null, null)
       when(factory.apply(res)).thenReturn(ResponseFrame(null, Result(prepared)))
       responseHandler ! ReceivedData(res, RequestStream(requester.ref, Prepare("QUERY")))
-      requester.expectMsg(ExPrepared(prepared, "QUERY", new InetSocketAddress("localhost", 1234)))
+      requester.expectMsg(ExPrepared(prepared, "QUERY", node(1111)))
     }
 
     it("should handle error response") {
-      responseHandler.underlyingActor.node = new InetSocketAddress("localhost", 1234)
       val res = ByteString.fromString("ERROR")
       when(factory.apply(res)).thenReturn(ResponseFrame(null, Error(111, "error_msg")))
       responseHandler ! ReceivedData(res, RequestStream(self, null))
-      expectMsg(NodeAwareError(Error(111, "error_msg"), new InetSocketAddress("localhost", 1234)))
+      expectMsg(NodeAwareError(Error(111, "error_msg"), node(1111)))
       expectNoMsg()
     }
 
-    it("should handle authenticate response") {
-      authenticationProbe.expectMsg("Started")
-      val res = ByteString.fromString("AUTH")
-      when(factory.apply(res)).thenReturn(ResponseFrame(null, Authenticate(ByteString.fromString("token"))))
-      responseHandler ! ReceivedData(res, RequestStream(self, null))
-      authenticationProbe.expectMsg(2 seconds, Authenticate(ByteString.fromString("token")))
+    it("should listen TopologyChange events") {
+      system.eventStream.subscribe(self, classOf[TopologyChangeEvent])
+      val responseHandler = TestActorRef(new ResponseHandler(null))
+      val node1 = InetAddress.getByName("127.0.0.1")
+      val node2 = InetAddress.getByName("127.0.0.2")
+      responseHandler ! event("TOPOLOGY_CHANGE", NEW_NODE.toString, node1)
+      responseHandler ! event("TOPOLOGY_CHANGE", REMOVED_NODE.toString, node2)
+
+      expectMsg(TopologyChangeEvent(NEW_NODE, node1))
+      expectMsg(TopologyChangeEvent(REMOVED_NODE, node2))
+      system.eventStream.unsubscribe(self)
+    }
+
+    it("should listen StatusChange events") {
+      system.eventStream.subscribe(self, classOf[StatusChangeEvent])
+      val responseHandler = TestActorRef(new ResponseHandler(null))
+      val node1 = InetAddress.getByName("127.0.0.1")
+      val node2 = InetAddress.getByName("127.0.0.2")
+      responseHandler ! event("STATUS_CHANGE", UP.toString, node1)
+      responseHandler ! event("STATUS_CHANGE", DOWN.toString, node2)
+
+      expectMsg(StatusChangeEvent(UP, node1))
+      expectMsg(StatusChangeEvent(DOWN, node2))
+      system.eventStream.unsubscribe(self)
     }
   }
 
-  trait MockResponseHandlerComponents extends ResponseHandlerComponents {
-    override def createAuthentication: Actor = new ForwardingActor(authenticationProbe.ref)
+  private def event(eventType: String, changeType: String, node: InetAddress): ByteString = {
+    val eventData = new ByteStringBuilder().putShort(eventType.length).append(ByteString.fromString(eventType))
+    eventData.putShort(changeType.length).append(ByteString.fromString(changeType))
+    eventData.append(Serializable(node).serialize())
+    new ByteStringBuilder()
+      .putByte(VERSION_FOR_V3)
+      .putByte(FLAGS)
+      .putShort(123)
+      .putByte(EVENT)
+      .putInt(111) //FrameLength is not used for now
+      .append(eventData.result())
+      .result()
   }
   
 }

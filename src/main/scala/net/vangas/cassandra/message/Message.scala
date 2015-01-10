@@ -130,7 +130,17 @@ case object Batch extends RequestMessage {
  *
  * The response to a REGISTER message will be a READY message.
  */
-//  case object Register extends RequestMessage
+case class RegisterForEvents(eventTypes: Seq[String]) extends RequestMessage {
+  val validEventTypes = Seq("TOPOLOGY_CHANGE", "STATUS_CHANGE", "SCHEMA_CHANGE")
+  require(eventTypes.forall(validEventTypes.contains))
+
+  override def serialize: ByteString = {
+    val builder = new ByteStringBuilder()
+    builder.putShort(eventTypes.size)
+    eventTypes.foreach(e => builder.append(writeString(e)))
+    builder.result()
+  }
+}
 
 
 /**

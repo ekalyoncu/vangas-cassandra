@@ -16,13 +16,16 @@
 
 package net.vangas.cassandra.connection
 
+import java.net.InetSocketAddress
+
 import org.joda.time.{DateTimeUtils, DateTime}
-import org.scalatest.{BeforeAndAfter, OneInstancePerTest, BeforeAndAfterAll, FunSpecLike}
+import org.scalatest.BeforeAndAfter
 import org.scalatest.mock.MockitoSugar._
-import org.scalatest.Matchers._
 import org.mockito.Mockito.when
 import org.mockito.Mockito.verify
-import akka.testkit.{TestProbe, TestActorRef, ImplicitSender, TestKit}
+import org.mockito.Mockito.verifyNoMoreInteractions
+import org.mockito.Mockito.verifyZeroInteractions
+import akka.testkit.{TestProbe, TestActorRef, TestKit}
 import akka.actor.{PoisonPill, ActorRef, Actor, ActorSystem}
 import akka.io.Tcp._
 import akka.util.ByteString
@@ -80,7 +83,7 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
       expectMsg(Register(connectionActor))
       expectMsg(Write(serializeFrame(id, Startup)))
       connectionActor.underlyingActor.cassandraConnection = self
-      responseHandlerProbe.expectMsg(Connected(null, null))
+      responseHandlerProbe.expectNoMsg()
       expectNoMsg()
     }
 
@@ -93,6 +96,16 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
       connectionActor ! Received(res)
       responseHandlerProbe.expectMsg(ReceivedData(res, RequestStream(self, Query("q", null))))
       verify(streamContext).releaseStream(0.toShort)
+    }
+
+    it("should redirect server-side events to response handler") {
+      responseHandlerProbe.expectMsg("Started")
+      makeConnected
+      val event = ByteString.fromString("SERVER_SIDE_EVENT")
+      when(streamIdExtractor.streamId(event)).thenReturn(-1.toShort)
+      connectionActor ! Received(event)
+      responseHandlerProbe.expectMsg(event)
+      verifyZeroInteractions(streamContext)
     }
 
     it("should not redirect server responses for unknown stream") {
@@ -168,10 +181,21 @@ class ConnectionSpec extends TestKit(ActorSystem("ConnectionSpecSystem"))
       expectMsg(ConnectionDefunct(connectionActor, node1))
       ioProbe.expectMsg(Connect(node1, timeout = Some(connectionTimeout)))
     }
+
+    it("should register for events") {
+      makeConnected
+      val register = RegisterForEvents(Seq("TOPOLOGY_CHANGE", "STATUS_CHANGE"))
+      when(streamContext.registerStream(RequestStream(null, null))).thenReturn(Some(3.toShort))
+      connectionActor ! register
+      expectMsg(Write(serializeFrame(3, register)))
+      verify(streamContext).registerStream(RequestStream(null, null))
+      verify(streamContext).releaseStream(3.toShort)
+      verifyNoMoreInteractions(streamContext)
+    }
   }
 
   trait MockConnectionComponents extends ConnectionComponents {
-    override def createResponseHandlerActor: Actor = new ForwardingActor(responseHandlerProbe.ref)
+    override def createResponseHandlerActor(node: InetSocketAddress): Actor = new ForwardingActor(responseHandlerProbe.ref)
     override def ioManager(implicit system: ActorSystem): ActorRef = ioProbe.ref
   }
 

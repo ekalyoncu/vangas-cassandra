@@ -43,12 +43,12 @@ import net.vangas.cassandra.message.Query
  * It is responsible to connect, send request frames to the node
  * and redirect received messages to the [[net.vangas.cassandra.connection.ResponseHandler]].
  *
- * @param nodeAddress Cassandra node to be connected
+ * @param node Cassandra node to be connected
  * @param streamContext Responsible for getting next available stream id, registering requester with stream id
  * @param streamIdExtractor Extracts streamId from response frame
  */
 private[cassandra] class Connection(connectionTimeout: FiniteDuration,
-                                    nodeAddress: InetSocketAddress,
+                                    node: InetSocketAddress,
                                     streamContext: StreamContext,
                                     streamIdExtractor: StreamIdExtractor)
   extends Actor { this: ConnectionComponents =>
@@ -58,9 +58,9 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
 
   var cassandraConnection: ActorRef = _
 
-  val responseHandler = context.actorOf(Props(createResponseHandlerActor))
+  val responseHandler = context.actorOf(Props(createResponseHandlerActor(node)))
 
-  ioManager ! Connect(nodeAddress, timeout = Some(connectionTimeout))
+  ioManager ! Connect(node, timeout = Some(connectionTimeout))
 
   override def preStart(): Unit = log.info("Starting connection actor...")
 
@@ -78,7 +78,6 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
     case c @ Connected(remote, local) =>
       log.info("Connected to node[{}] but connection still not ready to be used.", remote)
       cassandraConnection = sender()
-      responseHandler tell (c, cassandraConnection)
       cassandraConnection ! Register(self)
       streamContext.registerStream(RequestStream(self, Startup)) match {
         case Some(streamId) =>
@@ -89,22 +88,26 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
       }
 
     case CommandFailed(_: Connect) =>
-      log.error("Cannot connect to node[{}]", nodeAddress)
+      log.error("Cannot connect to node[{}]", node)
       context stop self
   }
 
   private[connection] def connected: Receive = {
     case Received(data) =>
       val streamId = streamIdExtractor.streamId(data)
-      streamContext.getRequester(streamId) match {
-        case Some(requestStream) =>
-          responseHandler ! ReceivedData(data, requestStream)
-          streamContext.releaseStream(streamId)
-        case _ => log.error("Server returned streamId[{}] which client didn't sent! Data: {}", streamId, data)
+      if (streamId == -1) { //Server-side events
+        responseHandler ! data
+      } else {
+        streamContext.getRequester(streamId) match {
+          case Some(requestStream) =>
+            responseHandler ! ReceivedData(data, requestStream)
+            streamContext.releaseStream(streamId)
+          case _ => log.error("Server returned streamId[{}] which client didn't sent! Data: {}", streamId, data)
+        }
       }
 
     case Ready =>
-      system.eventStream.publish(ConnectionReady(self, nodeAddress))
+      system.eventStream.publish(ConnectionReady(self, node))
       log.info("Connection is ready to be used.")
 
     case query: Query => doRequest(query, sender())
@@ -113,10 +116,23 @@ private[cassandra] class Connection(connectionTimeout: FiniteDuration,
 
     case execute: Execute => doRequest(execute, sender())
 
+    case registerForEvents: RegisterForEvents =>
+      log.info("Registering for event types: {}", registerForEvents.eventTypes)
+      val requester = sender()
+      streamContext.registerStream(RequestStream(null, null)) match {
+        case Some(streamId) =>
+          cassandraConnection ! Write(serializeFrame(streamId, registerForEvents))
+          streamContext.releaseStream(streamId) //We don't need anymore
+        case _ =>
+          log.warning("Connection has reached max stream id limit for request:[{}]", registerForEvents)
+          requester ! MaxStreamIdReached(self)
+          streamContext.cleanExpiredStreams()
+      }
+
     case CommandFailed(w: Write) =>
       val err = s"Command Failed. ACK:[${w.ack}]"
       log.error(err)
-      system.eventStream.publish(ConnectionDefunct(self, nodeAddress))
+      system.eventStream.publish(ConnectionDefunct(self, node))
       throw new ConnectionException(err) //this will restart connection
 
     case _: ConnectionClosed => context stop self

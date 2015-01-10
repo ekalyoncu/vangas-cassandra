@@ -22,24 +22,14 @@ import akka.actor._
 import java.net.InetSocketAddress
 import net.vangas.cassandra._
 import akka.util.ByteString
-import akka.io.Tcp.Connected
 import net.vangas.cassandra.message.ExPrepared
-import net.vangas.cassandra.message.Authenticate
 
-class ResponseHandler(responseFrameFactory: Factory[ByteString, ResponseFrame] = ResponseFrame)
-  extends Actor { this: ResponseHandlerComponents =>
+class ResponseHandler(node: InetSocketAddress,
+                      responseFrameFactory: Factory[ByteString, ResponseFrame] = ResponseFrame) extends Actor {
 
   val log = Logging(context.system.eventStream, "ResponseHandler")
 
-  val authentication = context.actorOf(Props(createAuthentication))
-  var cassandraConnection: ActorRef = _
-  var node: InetSocketAddress = _
-
   def receive = {
-    case Connected(remote, local) =>
-      node = remote
-      cassandraConnection = sender()
-
     case ReceivedData(data, RequestStream(requester, originalRequest, _)) =>
       val ResponseFrame(header, body) = responseFrameFactory(data)
       body match {
@@ -62,12 +52,15 @@ class ResponseHandler(responseFrameFactory: Factory[ByteString, ResponseFrame] =
           log.error("Error occurred. Code:[{}], Message: [{}], Original request: [{}], Node[{}]", code, msg, originalRequest, node)
           requester ! NodeAwareError(error, node)
 
-        case auth @ Authenticate(token) =>
-          log.info("Authenticating...")
-          authentication tell(auth, cassandraConnection)
-
         case x =>
           log.error(s"Unknown result body: [$body]")
+      }
+
+    case data: ByteString =>
+      val ResponseFrame(_, body) = responseFrameFactory(data)
+      body match {
+        case event: Event => context.system.eventStream.publish(event)
+        case x => log.warning("Unknown event body [{}]", x)
       }
   }
 

@@ -65,4 +65,10 @@ object ByteUtils {
     builder.result()
   }
 
+  def writeString(s: String): ByteString = {
+    val builder = new ByteStringBuilder
+    builder.putShort(s.length).append(ByteString.fromString(s))
+    builder.result()
+  }
+
 }

@@ -8,13 +8,10 @@ import akka.io.{IO, Tcp}
 import scala.concurrent.duration.FiniteDuration
 
 trait ConnectionComponents {
-  def createResponseHandlerActor: Actor = new ResponseHandler with ResponseHandlerComponents
+  def createResponseHandlerActor(node: InetSocketAddress): Actor = new ResponseHandler(node)
   def ioManager(implicit system: ActorSystem): ActorRef = IO(Tcp)
 }
 
-trait ResponseHandlerComponents {
-  def createAuthentication: Actor = new Authentication
-}
 
 trait ConnectionPoolsComponents {
   def createConnection(queryTimeOut: FiniteDuration,

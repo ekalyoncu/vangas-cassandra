@@ -1,7 +1,6 @@
 package net.vangas.cassandra.connection
 
 import org.joda.time.{DateTimeUtils, DateTime}
-import org.scalatest.junit.JUnitRunner
 import org.scalatest.{OneInstancePerTest, BeforeAndAfter, FunSpec}
 import org.scalatest.Matchers._
 import net.vangas.cassandra.RequestStream
@@ -25,6 +24,19 @@ class DefaultStreamContextSpec extends FunSpec with BeforeAndAfter with OneInsta
       context.streams.size should be(1)
       context.streams(0).requester should be(null)
       context.streams(0).originalRequest should be(Query("q", null))
+    }
+
+    it("should release streamid") {
+      val streamId1 = context.registerStream(RequestStream(null, Query("q", null)))
+      val streamId2 = context.registerStream(RequestStream(null, Query("q", null)))
+      streamId1 should be(Some(0))
+      streamId2 should be(Some(1))
+      context.streams.size should be(2)
+      context.releaseStream(streamId1.get)
+      context.streams.size should be(1)
+      val streamId3 = context.registerStream(RequestStream(null, Query("q", null)))
+      streamId3 should be(Some(0))
+      context.streams.size should be(2)
     }
 
     it("should reach max simultaneous stream limit") {
