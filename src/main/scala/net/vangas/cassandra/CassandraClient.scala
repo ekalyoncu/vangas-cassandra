@@ -21,23 +21,19 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import akka.actor.{Props, ActorSystem}
 import net.vangas.cassandra.config.Configuration
-import net.vangas.cassandra.connection.{ConnectionPools, DefaultSession, Session}
+import net.vangas.cassandra.connection.{DefaultSession, Session}
 import net.vangas.cassandra.loadbalancing.LoadBalancer
 import org.slf4j.LoggerFactory
 
 /**
  *
- * @param nodes List of InetSocketAddress of nodes in the cluster
+ * @param addresses List of address of nodes in the cluster
  * @param config Configuration to be used for connection and queries to cassandra nodes
  */
-class CassandraClient(nodes: Seq[InetSocketAddress], config: Configuration) {
+class CassandraClient(addresses: Seq[String], config: Configuration = Configuration()) {
   import net.vangas.cassandra.CassandraClient._
 
-  def this(nodes: Seq[InetSocketAddress]) { this(nodes, Configuration()) }
-
-  def this(nodeAddresses: Seq[String], port: Int = 9042) {
-    this(nodeAddresses.map(new InetSocketAddress(_, port)), Configuration())
-  }
+  private val nodes = addresses.map(new InetSocketAddress(_, config.port))
 
   private val loadBalancingPolicy = config.loadBalancingPolicy
   loadBalancingPolicy.init(nodes)

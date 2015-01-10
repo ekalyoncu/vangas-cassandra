@@ -71,6 +71,7 @@ object ResponseFrame extends Factory[ByteString, ResponseFrame] with StreamIdExt
       case READY => ResponseFrame(header, Ready)
       case RESULT => ResponseFrame(header, Result(body))
       case ERROR => ResponseFrame(header, Error(body))
+      case EVENT => ResponseFrame(header, Event(body))
       case AUTHENTICATE => ResponseFrame(header, Authenticate(body))
       case x => throw new IllegalArgumentException(s"Unknown opcode[$x]")
     }

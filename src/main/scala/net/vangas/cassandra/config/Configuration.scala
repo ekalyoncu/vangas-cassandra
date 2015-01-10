@@ -20,7 +20,8 @@ import net.vangas.cassandra.loadbalancing.{RoundRobinLoadBalancingPolicy, LoadBa
 
 import scala.concurrent.duration._
 
-case class Configuration(connectionsPerNode: Int = 2,
+case class Configuration(port: Int = 9042,
+                         connectionsPerNode: Int = 2,
                          connectionTimeout: FiniteDuration = 10.seconds,
                          queryTimeout: FiniteDuration = 1.second,
                          loadBalancingPolicy: LoadBalancingPolicy = new RoundRobinLoadBalancingPolicy,

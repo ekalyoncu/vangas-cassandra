@@ -20,7 +20,7 @@ import akka.util.{ByteIterator, ByteStringBuilder, ByteString}
 import net.vangas.cassandra._
 import net.vangas.cassandra.CassandraConstants._
 import net.vangas.cassandra.util.ByteUtils._
-import java.net.InetSocketAddress
+import java.net.{InetAddress, InetSocketAddress}
 
 sealed trait Message
 
@@ -266,7 +266,33 @@ object Result {
  * type it has REGISTER to.
  * All EVENT message have a streamId of -1.
  */
-case object Event extends ResponseMessage
+trait Event extends ResponseMessage
+
+object Event {
+  def apply(data: ByteString): Event = {
+    val byteIter = data.iterator
+    val eventType = readString(byteIter)
+    val changeType = readString(byteIter)
+    eventType match {
+      case "TOPOLOGY_CHANGE" =>
+        val node = INET.deserialize(byteIter.toByteString)
+        TopologyChangeEvent(TopologyChangeType.withName(changeType), node)
+      case "STATUS_CHANGE" =>
+        val node = INET.deserialize(byteIter.toByteString)
+        StatusChangeEvent(StatusChangeType.withName(changeType), node)
+      case "SCHEMA_CHANGE" => SchemaChangeEvent
+      case x => throw new IllegalArgumentException(s"Unknown event type: $x")
+    }
+  }
+}
+
+object TopologyChangeType extends Enumeration { val NEW_NODE, REMOVED_NODE = Value }
+object StatusChangeType extends Enumeration { val UP, DOWN = Value }
+object SchemaChangeType extends Enumeration { val CREATED, UPDATED, DROPPED = Value }
+
+case class TopologyChangeEvent(changeType: TopologyChangeType.Value, node: InetAddress) extends Event
+case class StatusChangeEvent(changeType: StatusChangeType.Value, node: InetAddress) extends Event
+case object SchemaChangeEvent extends Event //Not implemented yet
 
 /**
  * A server authentication challenge.
