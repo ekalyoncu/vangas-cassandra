@@ -44,7 +44,7 @@ class CassandraClient(addresses: Seq[String], config: Configuration = Configurat
 
   private implicit val system = ActorSystem(s"CassandraClient-$id")
 
-  private val loadBalancer = system.actorOf(Props(new LoadBalancer(loadBalancingPolicy)))
+  private val loadBalancer = system.actorOf(Props(new LoadBalancer(loadBalancingPolicy, config)))
 
   /**
    * Creates a new session

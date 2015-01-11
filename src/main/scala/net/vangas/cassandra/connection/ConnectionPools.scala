@@ -22,7 +22,9 @@ import akka.actor.Actor._
 import akka.actor._
 import net.vangas.cassandra._
 import net.vangas.cassandra.config.Configuration
-import net.vangas.cassandra.message.Query
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.TopologyChangeType._
+import net.vangas.cassandra.message.{StatusChangeEvent, TopologyChangeEvent, Query}
 
 import scala.collection.mutable
 
@@ -50,7 +52,7 @@ class ConnectionPools(keyspace: String,
     log.info("Stopping ConnectionPools and all connections in it...")
   }
 
-  def receive = connectionLifeCycle orElse stashing
+  def receive = connectionLifeCycle orElse serverEvents orElse stashing
 
   ///////////////////ACTOR RECEIVE//////////////////////////
   def connectionLifeCycle: Receive = {
@@ -87,6 +89,16 @@ class ConnectionPools(keyspace: String,
           pool.nextConnection.foreach(_.tell(prepare, noSender))
         }
       }
+  }
+
+  def serverEvents: Receive = {
+    case TopologyChangeEvent(NEW_NODE, address) =>
+
+    case TopologyChangeEvent(REMOVED_NODE, address) =>
+
+    case StatusChangeEvent(UP, address) =>
+
+    case StatusChangeEvent(DOWN, address) =>
   }
 
   def stashing: Receive = {

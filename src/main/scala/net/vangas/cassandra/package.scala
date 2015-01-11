@@ -45,9 +45,4 @@ package object cassandra {
   case class ConnectionReceived(connection: ActorRef, node: InetSocketAddress)
   case class NoConnectionFor(node: InetSocketAddress)
 
-  //Server Events
-  case class NodeAdded(node: InetSocketAddress)
-  case class NodeRemoved(node: InetSocketAddress)
-  case class NodeUp(node: InetSocketAddress)
-  case class NodeDown(node: InetSocketAddress)
 }

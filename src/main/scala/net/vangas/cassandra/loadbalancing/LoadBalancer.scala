@@ -18,8 +18,16 @@ package net.vangas.cassandra.loadbalancing
 
 import akka.actor.Actor
 import net.vangas.cassandra._
+import net.vangas.cassandra.config.Configuration
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.TopologyChangeType._
+import net.vangas.cassandra.message.{StatusChangeEvent, TopologyChangeEvent}
+import net.vangas.cassandra.util.NodeUtils.toNode
 
-class LoadBalancer(policy: LoadBalancingPolicy) extends Actor {
+class LoadBalancer(policy: LoadBalancingPolicy, config: Configuration) extends Actor {
+
+  context.system.eventStream.subscribe(self, classOf[TopologyChangeEvent])
+  context.system.eventStream.subscribe(self, classOf[StatusChangeEvent])
 
   def receive = loadBalance orElse serverEvents
 
@@ -29,16 +37,16 @@ class LoadBalancer(policy: LoadBalancingPolicy) extends Actor {
   }
 
   private def serverEvents: Receive = {
-    case NodeAdded(node) =>
-      policy.onNodeAdded(node)
+    case TopologyChangeEvent(NEW_NODE, address) =>
+      policy.onNodeAdded(toNode(address, config.port))
 
-    case NodeRemoved(node) =>
-      policy.onNodeRemoved(node)
+    case TopologyChangeEvent(REMOVED_NODE, address) =>
+      policy.onNodeRemoved(toNode(address, config.port))
 
-    case NodeUp(node) =>
-      policy.onNodeUp(node)
+    case StatusChangeEvent(UP, address) =>
+      policy.onNodeUp(toNode(address, config.port))
 
-    case NodeDown(node) =>
-      policy.onNodeDown(node)
+    case StatusChangeEvent(DOWN, address) =>
+      policy.onNodeDown(toNode(address, config.port))
   }
 }

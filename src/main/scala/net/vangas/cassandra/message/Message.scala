@@ -300,8 +300,8 @@ object TopologyChangeType extends Enumeration { val NEW_NODE, REMOVED_NODE = Val
 object StatusChangeType extends Enumeration { val UP, DOWN = Value }
 object SchemaChangeType extends Enumeration { val CREATED, UPDATED, DROPPED = Value }
 
-case class TopologyChangeEvent(changeType: TopologyChangeType.Value, node: InetAddress) extends Event
-case class StatusChangeEvent(changeType: StatusChangeType.Value, node: InetAddress) extends Event
+case class TopologyChangeEvent(changeType: TopologyChangeType.Value, address: InetAddress) extends Event
+case class StatusChangeEvent(changeType: StatusChangeType.Value, address: InetAddress) extends Event
 case object SchemaChangeEvent extends Event //Not implemented yet
 
 /**

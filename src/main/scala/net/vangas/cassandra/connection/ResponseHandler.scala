@@ -16,13 +16,16 @@
 
 package net.vangas.cassandra.connection
 
-import akka.event.Logging
-import net.vangas.cassandra.message._
 import akka.actor._
-import java.net.InetSocketAddress
-import net.vangas.cassandra._
+import akka.event.Logging
 import akka.util.ByteString
+import java.net.InetSocketAddress
+import net.vangas.cassandra.message._
+import net.vangas.cassandra._
 import net.vangas.cassandra.message.ExPrepared
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.TopologyChangeType._
+import scala.concurrent.duration._
 
 class ResponseHandler(node: InetSocketAddress,
                       responseFrameFactory: Factory[ByteString, ResponseFrame] = ResponseFrame) extends Actor {
@@ -57,9 +60,21 @@ class ResponseHandler(node: InetSocketAddress,
       }
 
     case data: ByteString =>
+      import context.dispatcher
+
       val ResponseFrame(_, body) = responseFrameFactory(data)
       body match {
-        case event: Event => context.system.eventStream.publish(event)
+        case nodeUp @ (TopologyChangeEvent(NEW_NODE, _) | StatusChangeEvent(UP, _)) =>
+          log.info("Got node up event[{}]", nodeUp)
+          //Cassandra sends event before node is up, so spec says to wait 1 second before trying to connect to node
+          context.system.scheduler.scheduleOnce(1 second) {
+            context.system.eventStream.publish(nodeUp)
+          }
+
+        case event: Event =>
+          log.info("Got server event[{}]", event)
+          context.system.eventStream.publish(event)
+
         case x => log.warning("Unknown event body [{}]", x)
       }
   }

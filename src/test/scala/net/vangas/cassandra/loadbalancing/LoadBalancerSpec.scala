@@ -16,9 +16,15 @@
 
 package net.vangas.cassandra.loadbalancing
 
+import java.net.InetAddress
+
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestKit}
 import net.vangas.cassandra._
+import net.vangas.cassandra.config.Configuration
+import net.vangas.cassandra.message.{StatusChangeEvent, TopologyChangeEvent}
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.TopologyChangeType._
 import org.scalatest.mock.MockitoSugar._
 import org.mockito.Mockito.when
 import org.mockito.Mockito.verify
@@ -29,7 +35,7 @@ class LoadBalancerSpec extends TestKit(ActorSystem("LoadBalancerSystem"))
   with VangasActorTestSupport {
 
   val lbPolicy = mock[LoadBalancingPolicy]
-  val lb = TestActorRef(new LoadBalancer(lbPolicy))
+  val lb = TestActorRef(new LoadBalancer(lbPolicy, Configuration()))
 
   describe("LoadBalancer") {
     it("should return queryplan") {
@@ -41,23 +47,23 @@ class LoadBalancerSpec extends TestKit(ActorSystem("LoadBalancerSystem"))
     }
 
     it("should update loadbalancerpolicy when host is added") {
-      lb ! NodeAdded(node(1111))
-      verify(lbPolicy).onNodeAdded(node(1111))
+      lb ! TopologyChangeEvent(NEW_NODE, InetAddress.getByName("localhost"))
+      verify(lbPolicy).onNodeAdded(node(9042))
     }
 
     it("should update loadbalancerpolicy when host is removed") {
-      lb ! NodeRemoved(node(1111))
-      verify(lbPolicy).onNodeRemoved(node(1111))
+      lb ! TopologyChangeEvent(REMOVED_NODE, InetAddress.getByName("localhost"))
+      verify(lbPolicy).onNodeRemoved(node(9042))
     }
 
     it("should update loadbalancerpolicy when host is up") {
-      lb ! NodeUp(node(1111))
-      verify(lbPolicy).onNodeUp(node(1111))
+      lb ! StatusChangeEvent(UP, InetAddress.getByName("localhost"))
+      verify(lbPolicy).onNodeUp(node(9042))
     }
 
     it("should update loadbalancerpolicy when host is down") {
-      lb ! NodeDown(node(1111))
-      verify(lbPolicy).onNodeDown(node(1111))
+      lb ! StatusChangeEvent(DOWN, InetAddress.getByName("localhost"))
+      verify(lbPolicy).onNodeDown(node(9042))
     }
   }
 }

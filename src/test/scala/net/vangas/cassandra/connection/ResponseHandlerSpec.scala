@@ -31,6 +31,7 @@ import org.joda.time.{DateTime, DateTimeUtils}
 import org.mockito.Mockito.when
 import org.scalatest.BeforeAndAfter
 import org.scalatest.mock.MockitoSugar._
+import scala.concurrent.duration._
 
 class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
   with VangasActorTestSupport with BeforeAndAfter {
@@ -107,6 +108,25 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
 
       expectMsg(StatusChangeEvent(UP, node1))
       expectMsg(StatusChangeEvent(DOWN, node2))
+      system.eventStream.unsubscribe(self)
+    }
+
+    it("should fire node up events after 1 second") {
+      system.eventStream.subscribe(self, classOf[StatusChangeEvent])
+      system.eventStream.subscribe(self, classOf[TopologyChangeEvent])
+      val responseHandler = TestActorRef(new ResponseHandler(null))
+      val node1 = InetAddress.getByName("127.0.0.1")
+      val node2 = InetAddress.getByName("127.0.0.2")
+
+      responseHandler ! event("STATUS_CHANGE", UP.toString, node1)
+
+      expectNoMsg(900 milliseconds)
+      expectMsg(StatusChangeEvent(UP, node1))
+
+      responseHandler ! event("TOPOLOGY_CHANGE", NEW_NODE.toString, node2)
+
+      expectNoMsg(900 milliseconds)
+      expectMsg(TopologyChangeEvent(NEW_NODE, node2))
       system.eventStream.unsubscribe(self)
     }
   }

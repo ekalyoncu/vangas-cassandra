@@ -52,6 +52,27 @@ class RoundRobinLoadBalancingIntegrationSpec extends FunSpec with CCMSupport wit
         query().executionInfo().triedNodes should be(Seq(node("127.0.0.2")))
       }
     }
+
+    it("should add new node and update loadbalancer") {
+      setupCluster(1, 2) {
+        val insertFuture = for {
+          r0 <- session.execute("DROP TABLE IF EXISTS table1")
+          r1 <- session.execute("CREATE TABLE table1 (id int PRIMARY KEY, name text)")
+          r2 <- session.execute("INSERT INTO table1(id, name) VALUES(1, 'test1')")
+        } yield r2
+        Await.result(insertFuture, 1 second)
+
+        query().executionInfo().triedNodes should be(Seq(node("127.0.0.1")))
+
+        stopNode(1)
+
+        addNode(2, "127.0.0.2")
+
+        Thread.sleep(1200) // Wait for node up event to be fired
+
+        query().executionInfo().triedNodes should be(Seq(node("127.0.0.2")))
+      }
+    }
   }
 
   private def query(): ResultSet = Await.result(session.execute("SELECT * FROM table1"), 1 second)

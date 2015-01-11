@@ -41,6 +41,11 @@ trait CCMSupport extends BeforeAndAfterAll with Matchers { this: Suite =>
     Seq(ccmPath, s"node$nodeNr", "stop").!
   }
 
+  def addNode(nodeNr: Int, host: String) = {
+    LOG.info(s"Adding node$nodeNr")
+    Seq(ccmPath, "add", s"node$nodeNr", s"-i $host").!
+  }
+
   def startCluster = {
     LOG.info(s"Starting cluster $cluster...")
     s"$ccmPath start".!
