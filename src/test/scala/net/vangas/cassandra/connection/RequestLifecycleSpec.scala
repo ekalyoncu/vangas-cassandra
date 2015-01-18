@@ -16,7 +16,7 @@
 
 package net.vangas.cassandra.connection
 
-import akka.actor.{ActorSystem, PoisonPill, Terminated}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Terminated}
 import akka.pattern._
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import akka.util.Timeout
@@ -31,6 +31,7 @@ import VangasTestHelpers._
 
 class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")) with VangasActorTestSupport {
 
+  val response = TestProbe()
   val loadBalancer = TestProbe()
   val connectionPools = TestProbe()
   def createRequestLifecycle(queryTimeout: FiniteDuration = 10 seconds) =
@@ -38,12 +39,12 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
 
   describe("RequestLifecycle") {
     it("should send request and get response") {
-      implicit val timeout = Timeout(1 second)
       val connection = TestProbe()
       val requestLifecycle = createRequestLifecycle()
       watch(requestLifecycle)
       val node1 = node(8888)
-      val response = (requestLifecycle ? Statement("test_query")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("test_query"), respond())
+
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -51,9 +52,8 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection.expectMsg(Query("test_query", QueryParameters()))
       connection.reply(Result(Void))
 
-      val resultSet = Await.result(response, 2 seconds)
+      val resultSet = response.receiveOne(100 milliseconds).asInstanceOf[ResultSet]
       resultSet.executionInfo().triedNodes should be(Seq(node1))
-
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
@@ -66,7 +66,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
     it("should kill itself when there is ReceiveTimeout and actor is in handleRequest state") {
       val requestLifecycle = createRequestLifecycle(50 milliseconds)
       watch(requestLifecycle)
-      requestLifecycle ! Statement("timed_out_query")
+      requestLifecycle ! RequestContext(Statement("timed_out_query"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
@@ -74,7 +74,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
     it("should kill itself when there is ReceiveTimeout and actor is in successOrRetryAllNodes state") {
       val requestLifecycle = createRequestLifecycle(50 milliseconds)
       watch(requestLifecycle)
-      requestLifecycle ! Statement("timed_out_query")
+      requestLifecycle ! RequestContext(Statement("timed_out_query"), null)
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node(8888))))
 
@@ -84,24 +84,22 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
     it("should kill itself and send error back to requester when there is no host left to query") {
       val requestLifecycle = createRequestLifecycle()
       watch(requestLifecycle)
-      requestLifecycle ! Statement("timed_out_query")
+      requestLifecycle ! RequestContext(Statement("timed_out_query"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator.empty))
 
-      val err = "All hosts in queryplan are queried and none of them was successful"
-      expectMsg(RequestError(RequestErrorCode.NO_HOST_AVAILABLE, err))
-
-      receiveOne(1 second).asInstanceOf[Terminated].actor should be(requestLifecycle)
+      val err = "All hosts in queryplan are queried and none of them was successful."
+      response.expectMsg(RequestError(RequestErrorCode.NO_HOST_AVAILABLE, err))
+      receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
     it("should try next host when connection is closed") {
-      implicit val timeout = Timeout(1 second)
       val requestLifecycle = createRequestLifecycle()
       val connection1 = TestProbe()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("retry_query"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -113,18 +111,17 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query", QueryParameters()))
       connection2.reply(Result(Void))
 
-      val resultSet = Await.result(response, 2 seconds)
+      val resultSet = response.receiveOne(100 milliseconds).asInstanceOf[ResultSet]
       resultSet.executionInfo().triedNodes should be(Seq(node1, node2))
     }
 
     it("should try next host for server-side errors") {
-      implicit val timeout = Timeout(1 seconds)
       val requestLifecycle = createRequestLifecycle()
       val connection1 = TestProbe()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_2")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("retry_query_2"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -142,16 +139,15 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_2", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+      response.receiveOne(100 milliseconds) shouldBe a[EmptyResultSet]
     }
 
     it("should try next host when there is no connection for current host") {
-      implicit val timeout = Timeout(1 seconds)
       val requestLifecycle = createRequestLifecycle()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_3")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("retry_query_3"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -164,18 +160,17 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_3", QueryParameters()))
       connection2.reply(Result(Void))
 
-      val resultSet = Await.result(response, 2 seconds)
+      val resultSet = response.receiveOne(100 milliseconds).asInstanceOf[ResultSet]
       resultSet.executionInfo().triedNodes should be(Seq(node2))
     }
 
     it("should retry next host when there is the connection reaches its max streamid") {
-      implicit val timeout = Timeout(1 seconds)
       val requestLifecycle = createRequestLifecycle()
       val connection1 = TestProbe()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_4")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("retry_query_4"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -193,17 +188,16 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_4", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+      response.receiveOne(100 milliseconds) shouldBe a[EmptyResultSet]
     }
 
     it("should retry next host when currentConnection is defunct") {
-      implicit val timeout = Timeout(1 seconds)
       val requestLifecycle = createRequestLifecycle()
       val connection1 = TestProbe()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("retry_query_5")).asInstanceOf[Future[ResultSet]]
+      requestLifecycle ! RequestContext(Statement("retry_query_5"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -218,17 +212,16 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Query("retry_query_5", QueryParameters()))
       connection2.reply(Result(Void))
 
-      Await.result(response, 2 seconds) shouldBe a[EmptyResultSet]
+      response.receiveOne(100 milliseconds) shouldBe a[EmptyResultSet]
     }
 
     it("should not retry next host when other connection is defunct") {
-      implicit val timeout = Timeout(1 seconds)
-      val connection0 = TestProbe()
+      val otherConnection = TestProbe()
       val connection1 = TestProbe()
       val node1 = node(8888)
 
       val requestLifecycle = createRequestLifecycle()
-      val response = requestLifecycle ? Statement("retry_query_6")
+      requestLifecycle ! RequestContext(Statement("retry_query_6"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1)))
 
@@ -236,24 +229,21 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connectionPools.reply(ConnectionReceived(connection1.ref, node1))
       connection1.expectMsg(Query("retry_query_6", QueryParameters()))
 
-      system.eventStream.publish(ConnectionDefunct(connection0.ref, node1))
+      system.eventStream.publish(ConnectionDefunct(otherConnection.ref, node1))
 
       connectionPools.expectNoMsg()
 
-      intercept[TimeoutException] {
-        Await.result(response, 1 seconds)
-      }
+      response.expectNoMsg()
     }
 
     it("should return error back to requester for non-server errors") {
-      implicit val timeout = Timeout(1 seconds)
       val requestLifecycle = createRequestLifecycle()
       watch(requestLifecycle)
       val connection1 = TestProbe()
       val connection2 = TestProbe()
       val node1 = node(8888)
       val node2 = node(9999)
-      val response = (requestLifecycle ? Statement("query_with_error")).asInstanceOf[Future[NodeAwareError]]
+      requestLifecycle ! RequestContext(Statement("query_with_error"), respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -265,7 +255,7 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection1.expectMsg(Query("query_with_error", QueryParameters()))
       connection2.expectNoMsg()
 
-      Await.result(response, 2 seconds) should be(RequestError(RequestErrorCode.INVALID_QUERY, "~TEST2~"))
+      response.receiveOne(100 milliseconds) should be(RequestError(RequestErrorCode.INVALID_QUERY, "~TEST2~"))
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
@@ -273,10 +263,10 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val requestLifecycle = createRequestLifecycle()
       watch(requestLifecycle)
       val underlyingActor = requestLifecycle.underlyingActor
-      underlyingActor.context.become(new underlyingActor.ReadyForResponse(RequestContext(self, null), null).receive)
+      underlyingActor.context.become(new underlyingActor.ReadyForResponse(RequestContext(null, respond()), null).receive)
       val node1 = node(1111)
       requestLifecycle ! ExPrepared(null, "prepared_query", node1)
-      expectMsg(ExPrepared(null, "prepared_query", node1))
+      response.expectMsg(ExPrepared(null, "prepared_query", node1))
       connectionPools.expectMsg(PrepareOnAllNodes(Prepare("prepared_query"), node1))
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
@@ -288,12 +278,12 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val statement = SimpleStatement("simple_query")
       requestLifecycle ! statement
       underlyingActor.context.become(
-        new underlyingActor.ReadyForResponse(RequestContext(self, statement), Iterator(node(1111))).receive
+        new underlyingActor.ReadyForResponse(RequestContext(statement, respond()), Iterator(node(1111))).receive
       )
       requestLifecycle ! NodeAwareError(Error(UNPREPARED, "~TEST~"), node(1111))
 
       val err = "Error is UNPREPARED but statement is not BoundStatement"
-      expectMsg(RequestError(RequestErrorCode.UNPREPARED_WITH_INCONSISTENT_STATEMENT, err))
+      response.expectMsg(RequestError(RequestErrorCode.UNPREPARED_WITH_INCONSISTENT_STATEMENT, err))
       receiveOne(100 milliseconds).asInstanceOf[Terminated].actor should be(requestLifecycle)
     }
 
@@ -304,7 +294,9 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       val node1 = node(8888)
       val node2 = node(9999)
       val prepared = new Prepared(new PreparedId("ID".getBytes), null, null)
-      requestLifecycle ! BoundStatement(new PreparedStatement(ExPrepared(prepared, "unprepared_query", node1)))
+      val statement = BoundStatement(new PreparedStatement(ExPrepared(prepared, "unprepared_query", node1)))
+
+      requestLifecycle ! RequestContext(statement, respond())
       loadBalancer.expectMsg(CreateQueryPlan)
       loadBalancer.reply(QueryPlan(Iterator(node1, node2)))
       connectionPools.expectMsg(GetConnectionFor(node1))
@@ -322,5 +314,8 @@ class RequestLifecycleSpec extends TestKit(ActorSystem("RequestLifecycleSystem")
       connection2.expectMsg(Execute(new PreparedId("ID".getBytes), QueryParameters()))
     }
   }
+
+  private def respond(requester: ActorRef = response.ref)(ctx: ResponseContext): Unit =
+    ctx.response.fold(err => requester ! err, result => requester ! result)
 
 }

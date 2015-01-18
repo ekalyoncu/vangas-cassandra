@@ -30,25 +30,25 @@ import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 import VangasTestHelpers._
 
-class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSystem")) with VangasActorTestSupport {
+class ConnectionPoolManagerSpec extends TestKit(ActorSystem("ConnectionPoolManagerActorSystem")) with VangasActorTestSupport {
 
   val config = Configuration(connectionsPerNode = 1)
 
-  def newConnectionPools(nodes: Seq[InetSocketAddress] = Seq.empty,
-                         connections: Map[InetSocketAddress, ActorRef] = Map.empty,
-                         config: Configuration = config) =
-    TestActorRef(new ConnectionPools("TEST_KS", nodes, config) with ConnectionPoolsComponents {
+  def newConnectionPoolManager(nodes: Seq[InetSocketAddress] = Seq.empty,
+                               connections: Map[InetSocketAddress, ActorRef] = Map.empty,
+                               config: Configuration = config) =
+    TestActorRef(new ConnectionPoolManager(1, "TEST_KS", nodes, config) with CPManagerComponents {
       override def createConnection(queryTimeOut: FiniteDuration,
                                     connectionTimeout: FiniteDuration,
                                     node: InetSocketAddress): Actor = new ForwardingActor(connections(node))
     })
 
-  describe("ConnectionPools") {
+  describe("ConnectionPoolManager") {
 
     it("should create connection per hosts") {
       val node1 = node(1111)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPools(Seq(node1), Map(node1 -> connection1.ref))
+      val connectionPools = newConnectionPoolManager(Seq(node1), Map(node1 -> connection1.ref))
       connection1.expectMsg("Started")
       connectionPools ! PoisonPill
       connection1.expectMsg("Closed")
@@ -59,7 +59,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
       val node2 = node(2222)
       val connection1 = TestProbe()
       val connection2 = TestProbe()
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       system.eventStream.publish(ConnectionReady(connection2.ref, node2))
       connection1.expectMsgPF(){ case Query("USE TEST_KS", _) => true }
@@ -72,7 +72,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
     it("should remove connection when it is closed") {
       val node1 = node(1111)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       Await.result(gracefulStop(connection1.ref, 1 second), 1.5 seconds)
       connectionPools.underlyingActor.pools(node1).connections.size should be(0)
@@ -81,7 +81,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
     it("should get connection for node") {
       val node1 = node(1111)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       connectionPools ! GetConnectionFor(node1)
       expectMsg(ConnectionReceived(connection1.ref, node1))
@@ -91,7 +91,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
       val node1 = node(1111)
       val node2 = node(2222)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       connectionPools ! GetConnectionFor(node2)
       expectMsg(NoConnectionFor(node2))
@@ -105,7 +105,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
       val connection2 = TestProbe()
       val connection3 = TestProbe()
       Seq(connection1, connection2, connection3).foreach(_.ignoreMsg{ case msg: Query => true})
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       system.eventStream.publish(ConnectionReady(connection2.ref, node2))
       system.eventStream.publish(ConnectionReady(connection3.ref, node3))
@@ -118,7 +118,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
       val node1 = node(1111)
       val connection1 = TestProbe()
       val configForNPE = Configuration(connectionsPerNode = 1, queryConfig = null)
-      newConnectionPools(Seq(node1), Map(node1 -> connection1.ref), configForNPE)
+      newConnectionPoolManager(Seq(node1), Map(node1 -> connection1.ref), configForNPE)
       connection1.expectMsg("Started")
       system.eventStream.publish(ConnectionReady(connection1.ref, node1))
       connection1.expectMsg("Closed")
@@ -130,7 +130,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
     it("should stash messages when there is no ready connection") {
       val node1 = node(1111)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
 
       connectionPools ! GetConnectionFor(node1)
       expectNoMsg()
@@ -147,7 +147,7 @@ class ConnectionPoolsSpec extends TestKit(ActorSystem("ConnectionPoolsActorSyste
     it("should stop stashing after 2 messages") {
       //2 is configured in application.conf under test folder
       val node1 = node(1111)
-      val connectionPools = newConnectionPools()
+      val connectionPools = newConnectionPoolManager()
 
       connectionPools ! GetConnectionFor(node1)
       connectionPools ! GetConnectionFor(node1)

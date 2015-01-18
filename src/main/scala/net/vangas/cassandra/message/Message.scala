@@ -213,7 +213,7 @@ class PreparedId(val id: Array[Byte]) {
   }
 }
 
-case class ExPrepared(prepared: Prepared, originalQuery: String, node: InetSocketAddress)
+case class ExPrepared(prepared: Prepared, originalQuery: String, node: InetSocketAddress) extends ResponseMessage
 case class Prepared(id: PreparedId, metaData: MetaData, resultMetaData: MetaData) extends Kind
 
 object Prepared {

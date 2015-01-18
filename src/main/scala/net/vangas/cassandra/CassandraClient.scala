@@ -33,14 +33,18 @@ import org.slf4j.LoggerFactory
 class CassandraClient(addresses: Seq[String], config: Configuration = Configuration()) {
   import net.vangas.cassandra.CassandraClient._
 
+  require(config != null, "Configuration object cannot be null!")
+  require(config.queryConfig != null, "QueryConfig object cannot be null!")
+
+  private val id = clientId.incrementAndGet()
+
+  LOG.info(s"Creating CassandraClient-$id...")
+
   private val nodes = addresses.map(new InetSocketAddress(_, config.port))
 
   private val loadBalancingPolicy = config.loadBalancingPolicy
+
   loadBalancingPolicy.init(nodes)
-
-  private  val id = clientId.incrementAndGet()
-
-  LOG.info(s"Creating CassandraClient-$id...")
 
   private implicit val system = ActorSystem(s"CassandraClient-$id")
 

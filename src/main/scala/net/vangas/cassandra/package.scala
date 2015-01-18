@@ -16,9 +16,10 @@
 
 package net.vangas
 
-import java.nio.ByteOrder
-import akka.actor.ActorRef
 import java.net.InetSocketAddress
+import java.nio.ByteOrder
+
+import akka.actor.ActorRef
 import akka.util.ByteString
 import net.vangas.cassandra.message.{Prepare, RequestMessage}
 import org.joda.time.DateTime
@@ -33,8 +34,6 @@ package object cassandra {
   case class ReceivedData(data: ByteString, requestStream: RequestStream)
   case class ConnectionReady(connection: ActorRef, nodeAddress: InetSocketAddress)
   case class ConnectionDefunct(connection: ActorRef, nodeAddress: InetSocketAddress)
-
-  case object RequestLifecycleStarted
 
   case class MaxStreamIdReached(connection: ActorRef)
   case class PrepareOnAllNodes(prepare: Prepare, exceptThisNode: InetSocketAddress)

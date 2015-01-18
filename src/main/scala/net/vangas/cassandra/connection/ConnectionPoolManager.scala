@@ -28,10 +28,11 @@ import net.vangas.cassandra.message.{StatusChangeEvent, TopologyChangeEvent, Que
 
 import scala.collection.mutable
 
-class ConnectionPools(keyspace: String,
-                      nodes: Seq[InetSocketAddress],
-                      config: Configuration)
-  extends Actor with Stash with ActorLogging { this: ConnectionPoolsComponents =>
+class ConnectionPoolManager(sessionId: Int,
+                            keyspace: String,
+                            nodes: Seq[InetSocketAddress],
+                            config: Configuration)
+  extends Actor with Stash with ActorLogging { this: CPManagerComponents =>
 
   var isReady = false
   val pools = new mutable.HashMap[InetSocketAddress, RoundRobinConnectionPool] withDefault(_ => new RoundRobinConnectionPool)
@@ -45,11 +46,11 @@ class ConnectionPools(keyspace: String,
     }
   }
 
-  override def preStart(): Unit = log.info("Starting ConnectionPools actor...")
+  override def preStart(): Unit = log.info(s"Starting ConnectionPools-$sessionId actor...")
 
 
   override def postStop(): Unit = {
-    log.info("Stopping ConnectionPools and all connections in it...")
+    log.info(s"Stopping ConnectionPools-$sessionId and all connections in it...")
   }
 
   def receive = connectionLifeCycle orElse serverEvents orElse stashing
@@ -113,7 +114,7 @@ class ConnectionPools(keyspace: String,
       isReady = true
       unstashAll()
       context become ready
-      log.debug("ConnectionPools is ready for requests (Unstashed all messages).")
+      log.debug("ConnectionPools-{} is ready for requests (Unstashed all messages).", sessionId)
     }
   }
 }
