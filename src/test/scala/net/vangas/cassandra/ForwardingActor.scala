@@ -16,9 +16,11 @@
 
 package net.vangas.cassandra
 
-import akka.actor.{ActorLogging, ActorRef, Actor}
+import akka.actor.{Terminated, ActorLogging, ActorRef, Actor}
 
 class ForwardingActor(underlying: ActorRef) extends Actor with ActorLogging {
+
+  context.watch(underlying)
 
   override def preStart(): Unit = {
     log.info("Starting forwarding actor. Underlying: {}", underlying.path)
@@ -37,9 +39,16 @@ class ForwardingActor(underlying: ActorRef) extends Actor with ActorLogging {
   }
 
   def receive = {
+    case Terminated(actor) =>
+      if (actor == underlying) {
+        log.warning("Underlying actor is dead! Killing itself...")
+        context stop self
+      }
+
     case msg =>
       val snd = sender()
       log.info(s"Forwarding $msg from $snd to $underlying")
       underlying.!(msg)(snd)
+
   }
 }

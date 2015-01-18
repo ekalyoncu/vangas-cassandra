@@ -128,6 +128,7 @@ object DefaultSession {
       system.actorOf(Props(new SessionActor(sessionId, keyspace, nodes, config, loadBalancer) with SessionComponents), s"Session-$sessionId")
 
     val actorBridge = DriverActorBridge(system)
+    actorBridge.activateSession(sessionId)
 
     new DefaultSession(sessionId, sessionActor, actorBridge, config)
   }
@@ -138,20 +139,44 @@ private[connection] class SessionActor(sessionId: Int,
                                        nodes: Seq[InetSocketAddress],
                                        config: Configuration,
                                        loadBalancer: ActorRef)
-  extends Actor { this: SessionComponents =>
+  extends Actor with ActorLogging { this: SessionComponents =>
 
-  val cpManagerProps =
-    Props(createConnectionManager(sessionId, keyspace, nodes, config)).withDispatcher("akka.actor.cpmanager-dispatcher")
-  val connectionPoolManager = context.actorOf(cpManagerProps, s"CPManager-$sessionId")
+  val actorBridge = DriverActorBridge(context.system)
+  val connectionPoolManager = context.actorOf(
+    Props(createConnectionManager(sessionId, keyspace, nodes, config)).withDispatcher("akka.actor.cpmanager-dispatcher"),
+    s"CPManager-$sessionId"
+  )
+  context.watch(connectionPoolManager)
 
   def receive = {
     case statement: Statement =>
       val requester = sender()
       val requestLifeCycle = context.actorOf(Props(createRequestLifecycle(loadBalancer, connectionPoolManager, config)))
       requestLifeCycle ! RequestContext(statement, respond(requester))
+
+    case Terminated(actor) =>
+      if (actor == connectionPoolManager) {
+        log.error(s"ConnectionPoolManager for session-$sessionId is dead! Stopping session...")
+        actorBridge.closeSession(sessionId)
+        context stop self
+      }
   }
 
   private def respond(requester: ActorRef)(responseContext: ResponseContext): Unit = {
     requester ! responseContext.response
+  }
+
+  //This method is called only when actor is stopped not restarted
+  override def postStop(): Unit = {
+    log.warning(s"SessionActor-$sessionId is being stopped...")
+    DriverActorBridge(context.system).closeSession(sessionId)
+  }
+
+  //Don't call postStop
+  override def preRestart(reason: Throwable, message: Option[Any]): Unit = {
+    context.children foreach { child =>
+      context.unwatch(child)
+      context.stop(child)
+    }
   }
 }

@@ -28,15 +28,20 @@ class DriverActorBridgeImplSpec extends FunSpec {
     it("should activate session") {
       bridge.activateSession(1)
       bridge.activeSessions.asScala should be(Map(1 -> true))
+      bridge.isSessionClosed(1) should be(false)
     }
 
     it("should close session") {
       bridge.activateSession(1)
+      bridge.isSessionClosed(1) should be(false)
       bridge.activateSession(2)
+      bridge.isSessionClosed(2) should be(false)
       bridge.activeSessions.asScala should be(Map(1 -> true, 2 -> true))
       bridge.closeSession(1)
+      bridge.isSessionClosed(1) should be(true)
       bridge.activeSessions.asScala should be(Map(2 -> true))
       bridge.closeSession(2)
+      bridge.isSessionClosed(2) should be(true)
       bridge.activeSessions.asScala should be(Map.empty)
     }
 

@@ -38,7 +38,7 @@ class DriverActorBridgeImpl extends Extension with DriverActorBridge {
   @volatile private[cassandra] var loadBalancerAlive = true
   private[cassandra] val activeSessions = new java.util.concurrent.ConcurrentHashMap[Int, Boolean]()
 
-  def isSessionClosed(sessionId: Int): Boolean = activeSessions.contains(sessionId)
+  def isSessionClosed(sessionId: Int): Boolean = !activeSessions.containsKey(sessionId)
 
   def activateSession(sessionId: Int) { activeSessions.put(sessionId, true) }
 
