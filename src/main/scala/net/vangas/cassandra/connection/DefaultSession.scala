@@ -89,12 +89,13 @@ private[connection] class DefaultSession(sessionId: Int,
     gracefulStop(sessionActor, 1 second)
   }
 
-  private def execute[T](statement: Statement, requestLifeCycle: ActorRef)
+  private def execute[T](statement: Statement,
+                         sessionActor: ActorRef)
                         (func: (Any, Promise[T]) => Unit)
                         (implicit executor: ExecutionContext): Future[T] = {
     implicit val timeout = Timeout(config.queryTimeout)
     val p = Promise[T]()
-    (requestLifeCycle ? statement).mapTo[Either[RequestError, Any]].map {
+    (sessionActor ? statement).mapTo[Either[RequestError, Any]].map {
       case Right(result) => func(result, p)
       case Left(err) => func(err, p)
     }
@@ -139,8 +140,9 @@ private[connection] class SessionActor(sessionId: Int,
                                        loadBalancer: ActorRef)
   extends Actor { this: SessionComponents =>
 
-  val connectionPoolManager =
-    context.actorOf(Props(createConnectionManager(sessionId, keyspace, nodes, config)), s"CPManager-$sessionId")
+  val cpManagerProps =
+    Props(createConnectionManager(sessionId, keyspace, nodes, config)).withDispatcher("akka.actor.cpmanager-dispatcher")
+  val connectionPoolManager = context.actorOf(cpManagerProps, s"CPManager-$sessionId")
 
   def receive = {
     case statement: Statement =>

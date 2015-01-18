@@ -85,29 +85,23 @@ class ResponseHandlerSpec extends TestKit(ActorSystem("ResponseHandlerSpec"))
       expectNoMsg()
     }
 
-    it("should listen TopologyChange events") {
+    it("should listen TopologyChange removed_node events") {
       system.eventStream.subscribe(self, classOf[TopologyChangeEvent])
       val responseHandler = TestActorRef(new ResponseHandler(null))
       val node1 = InetAddress.getByName("127.0.0.1")
-      val node2 = InetAddress.getByName("127.0.0.2")
-      responseHandler ! event("TOPOLOGY_CHANGE", NEW_NODE.toString, node1)
-      responseHandler ! event("TOPOLOGY_CHANGE", REMOVED_NODE.toString, node2)
+      responseHandler ! event("TOPOLOGY_CHANGE", REMOVED_NODE.toString, node1)
 
-      expectMsg(TopologyChangeEvent(NEW_NODE, node1))
-      expectMsg(TopologyChangeEvent(REMOVED_NODE, node2))
+      expectMsg(TopologyChangeEvent(REMOVED_NODE, node1))
       system.eventStream.unsubscribe(self)
     }
 
-    it("should listen StatusChange events") {
+    it("should listen StatusChange down events") {
       system.eventStream.subscribe(self, classOf[StatusChangeEvent])
       val responseHandler = TestActorRef(new ResponseHandler(null))
       val node1 = InetAddress.getByName("127.0.0.1")
-      val node2 = InetAddress.getByName("127.0.0.2")
-      responseHandler ! event("STATUS_CHANGE", UP.toString, node1)
-      responseHandler ! event("STATUS_CHANGE", DOWN.toString, node2)
+      responseHandler ! event("STATUS_CHANGE", DOWN.toString, node1)
 
-      expectMsg(StatusChangeEvent(UP, node1))
-      expectMsg(StatusChangeEvent(DOWN, node2))
+      expectMsg(StatusChangeEvent(DOWN, node1))
       system.eventStream.unsubscribe(self)
     }
 

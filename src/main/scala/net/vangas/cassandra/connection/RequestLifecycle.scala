@@ -31,7 +31,7 @@ import scala.collection.mutable
  * till successful response or error back to requester.
  *
  * @param loadBalancer LoadBalancer actor which creates query plan for each request
- * @param connectionPoolManager ConnectionPool actor which keeps connectionPools per host
+ * @param connectionPoolManager ConnectionPoolManager actor which keeps connectionPools per host
  */
 class RequestLifecycle(loadBalancer: ActorRef,
                        connectionPoolManager: ActorRef,

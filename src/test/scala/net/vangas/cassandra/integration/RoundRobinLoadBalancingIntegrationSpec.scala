@@ -53,6 +53,7 @@ class RoundRobinLoadBalancingIntegrationSpec extends FunSpec with CCMSupport wit
       }
     }
 
+    //FIXME: Not implemented yet
     it("should add new node and update loadbalancer") {
       setupCluster(1, 2) {
         val insertFuture = for {

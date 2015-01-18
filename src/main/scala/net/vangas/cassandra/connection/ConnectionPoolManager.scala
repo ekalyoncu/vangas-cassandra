@@ -46,11 +46,11 @@ class ConnectionPoolManager(sessionId: Int,
     }
   }
 
-  override def preStart(): Unit = log.info(s"Starting ConnectionPools-$sessionId actor...")
+  override def preStart(): Unit = log.info(s"Starting ConnectionPoolManager-$sessionId actor...")
 
 
   override def postStop(): Unit = {
-    log.info(s"Stopping ConnectionPools-$sessionId and all connections in it...")
+    log.info(s"Stopping ConnectionPoolManager-$sessionId and all connections in it...")
   }
 
   def receive = connectionLifeCycle orElse serverEvents orElse stashing
@@ -114,7 +114,7 @@ class ConnectionPoolManager(sessionId: Int,
       isReady = true
       unstashAll()
       context become ready
-      log.debug("ConnectionPools-{} is ready for requests (Unstashed all messages).", sessionId)
+      log.debug("ConnectionPoolManager-{} is ready for requests (Unstashed all messages).", sessionId)
     }
   }
 }
