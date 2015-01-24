@@ -24,7 +24,8 @@ import net.vangas.cassandra._
 import net.vangas.cassandra.config.Configuration
 import net.vangas.cassandra.message.StatusChangeType._
 import net.vangas.cassandra.message.TopologyChangeType._
-import net.vangas.cassandra.message.{StatusChangeEvent, TopologyChangeEvent, Query}
+import net.vangas.cassandra.message.{Query, StatusChangeEvent, TopologyChangeEvent}
+import net.vangas.cassandra.util.NodeUtils.toNode
 
 import scala.collection.mutable
 
@@ -38,13 +39,10 @@ class ConnectionPoolManager(sessionId: Int,
   val pools = new mutable.HashMap[InetSocketAddress, RoundRobinConnectionPool] withDefault(_ => new RoundRobinConnectionPool)
 
   context.system.eventStream.subscribe(self, classOf[ConnectionReady])
+  context.system.eventStream.subscribe(self, classOf[TopologyChangeEvent])
+  context.system.eventStream.subscribe(self, classOf[StatusChangeEvent])
 
-  nodes.foreach { node =>
-    val hostName = node.getHostName
-    for(i <- 1 to config.connectionsPerNode) {
-      context.actorOf(Props(createConnection(config.queryTimeout, config.connectionTimeout, node)), s"${hostName}_$i")
-    }
-  }
+  nodes.foreach(createConnectionActors)
 
   override def preStart(): Unit = log.info(s"Starting ConnectionPoolManager-$sessionId actor...")
 
@@ -53,10 +51,10 @@ class ConnectionPoolManager(sessionId: Int,
     log.info(s"Stopping ConnectionPoolManager-$sessionId and all connections in it...")
   }
 
-  def receive = connectionLifeCycle orElse serverEvents orElse stashing
+  def receive = connectionLifeCycle orElse stashing
 
   ///////////////////ACTOR RECEIVE//////////////////////////
-  def connectionLifeCycle: Receive = {
+  def connectionLifeCycle: Receive = serverEvents orElse {
     case ConnectionReady(connection, node) => {
       def addToPool() {
         val pool = pools(node)
@@ -94,18 +92,26 @@ class ConnectionPoolManager(sessionId: Int,
 
   def serverEvents: Receive = {
     case TopologyChangeEvent(NEW_NODE, address) =>
-
-    case TopologyChangeEvent(REMOVED_NODE, address) =>
+      log.info("New node[{}] is being added pool...", address)
+      addNewNode(toNode(address, config.port))
 
     case StatusChangeEvent(UP, address) =>
+      log.info("Node[{}] is up and being added pool...", address)
+      addNewNode(toNode(address, config.port))
+
+    case TopologyChangeEvent(REMOVED_NODE, address) =>
+      log.info("Node[{}] is removed from cluster and being removed from pool...", address)
+      removeNodeAndConnections(toNode(address, config.port))
 
     case StatusChangeEvent(DOWN, address) =>
+      log.info("Node[{}] is down and being removed from pool...", address)
+      removeNodeAndConnections(toNode(address, config.port))
   }
 
   def stashing: Receive = {
     case msg =>
       log.debug("Stashing message:[{}]", msg)
-      try { stash() } catch { case e: StashOverflowException => becomeReady()}
+      try { stash() } catch { case e: StashOverflowException => becomeReady() }
   }
   ///////////////////ACTOR RECEIVE END////////////////////////
 
@@ -117,12 +123,30 @@ class ConnectionPoolManager(sessionId: Int,
       log.debug("ConnectionPoolManager-{} is ready for requests (Unstashed all messages).", sessionId)
     }
   }
+
+  private def createConnectionActors(node: InetSocketAddress): Unit = {
+    for(i <- 1 to config.connectionsPerNode) {
+      context.actorOf(Props(createConnection(config.queryTimeout, config.connectionTimeout, node)))
+    }
+  }
+
+  private def addNewNode(node: InetSocketAddress): Unit = {
+    if (pools.contains(node)){
+      removeNodeAndConnections(node)
+    }
+    createConnectionActors(node)
+  }
+
+  private def removeNodeAndConnections(node: InetSocketAddress): Unit = {
+    pools.get(node).foreach(_.killConnections())
+    pools.remove(node)
+  }
 }
 
 //Not Thread-safe should be used only in actor
 private[connection] class RoundRobinConnectionPool {
-  var index = 0
-  val connections = new mutable.ListBuffer[ActorRef]
+  private[connection] var index = 0
+  private[connection] val connections = new mutable.ListBuffer[ActorRef]
   
   def hasConnection: Boolean = connections.nonEmpty
 
@@ -148,6 +172,10 @@ private[connection] class RoundRobinConnectionPool {
 
   def removeConnection(connection: ActorRef): Unit = {
     connections -= connection
+  }
+
+  def killConnections(): Unit = {
+    connections.foreach(_ ! PoisonPill)
   }
 
 }

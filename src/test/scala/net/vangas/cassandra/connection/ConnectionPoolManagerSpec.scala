@@ -17,30 +17,37 @@
 package net.vangas.cassandra.connection
 
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicInteger
 
 import akka.actor._
 import akka.pattern.gracefulStop
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
+import net.vangas.cassandra.VangasTestHelpers._
 import net.vangas.cassandra._
 import net.vangas.cassandra.config.Configuration
-import net.vangas.cassandra.message.{Prepare, Query}
+import net.vangas.cassandra.message.TopologyChangeType._
+import net.vangas.cassandra.message.StatusChangeType._
+import net.vangas.cassandra.message.{StatusChangeEvent, Prepare, Query, TopologyChangeEvent}
+
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.concurrent.duration.FiniteDuration
-import VangasTestHelpers._
+import org.scalatest.Inspectors._
 
 class ConnectionPoolManagerSpec extends TestKit(ActorSystem("ConnectionPoolManagerActorSystem")) with VangasActorTestSupport {
 
   val config = Configuration(connectionsPerNode = 1)
 
   def newConnectionPoolManager(nodes: Seq[InetSocketAddress] = Seq.empty,
-                               connections: Map[InetSocketAddress, ActorRef] = Map.empty,
+                               connectionFactory: (InetSocketAddress) => ActorRef = _ => null,
                                config: Configuration = config) =
     TestActorRef(new ConnectionPoolManager(1, "TEST_KS", nodes, config) with CPManagerComponents {
       override def createConnection(queryTimeOut: FiniteDuration,
                                     connectionTimeout: FiniteDuration,
-                                    node: InetSocketAddress): Actor = new ForwardingActor(connections(node))
+                                    node: InetSocketAddress): Actor = {
+        log.info("Creating new connection actor for node[{}]", node)
+        new ForwardingActor(connectionFactory(node))
+      }
     })
 
   describe("ConnectionPoolManager") {
@@ -48,7 +55,7 @@ class ConnectionPoolManagerSpec extends TestKit(ActorSystem("ConnectionPoolManag
     it("should create connection per hosts") {
       val node1 = node(1111)
       val connection1 = TestProbe()
-      val connectionPools = newConnectionPoolManager(Seq(node1), Map(node1 -> connection1.ref))
+      val connectionPools = newConnectionPoolManager(Seq(node1), _ => connection1.ref)
       connection1.expectMsg("Started")
       connectionPools ! PoisonPill
       connection1.expectMsg("Closed")
@@ -160,6 +167,75 @@ class ConnectionPoolManagerSpec extends TestKit(ActorSystem("ConnectionPoolManag
       pools(node1).connections should be(mutable.ListBuffer.empty)
     }
 
+    forAll(Seq(
+      TopologyChangeEvent(REMOVED_NODE, node("127.0.0.1").getAddress),
+      StatusChangeEvent(DOWN, node("127.0.0.1").getAddress)
+    )) { removeEvent =>
+      it(s"should remove node and connections for $removeEvent") {
+        val node1 = node("127.0.0.1")
+        val node2 = node("127.0.0.2")
+        val counter = new AtomicInteger(0)
+        val connection1 = TestProbe()
+        val connection2 = TestProbe()
+        val connection3 = TestProbe()
+        val connectionFactory = (node: InetSocketAddress) => {
+          if (node == node1) {
+            if (counter.getAndIncrement % 2 == 0) connection1.ref else connection2.ref
+          } else {
+            connection3.ref
+          }
+        }
+        watch(connection1.ref)
+        watch(connection2.ref)
+        watch(connection3.ref)
+        val cpManager = newConnectionPoolManager(nodes = Seq(node1, node2),
+          connectionFactory = connectionFactory,
+          config = Configuration(connectionsPerNode = 2))
+        connection1.expectMsg("Started")
+        connection2.expectMsg("Started")
+        connection3.expectMsg("Started")
+
+        cpManager ! ConnectionReady(connection1.ref, node1)
+        cpManager ! ConnectionReady(connection2.ref, node1)
+        cpManager ! ConnectionReady(connection3.ref, node2)
+
+        system.eventStream.publish(removeEvent)
+        expectTerminated(connection1.ref)
+        expectTerminated(connection2.ref)
+        expectNoMsg()
+        cpManager.underlyingActor.pools.size should be(1)
+        cpManager.underlyingActor.pools(node2).connections.toSeq should be(Seq(connection3.ref))
+      }
+    }
+
+
+    forAll(Seq(
+      TopologyChangeEvent(NEW_NODE, node("127.0.0.1").getAddress),
+      StatusChangeEvent(UP, node("127.0.0.1").getAddress)
+      )) { addEvent =>
+      it(s"should add new node and connections for $addEvent") {
+        val node1 = node("127.0.0.1")
+        var counter = -1
+        val connection1 = TestProbe()
+        val connection2 = TestProbe()
+        val connectionFactory = (node: InetSocketAddress) => {
+          counter += 1
+          if (counter % 2 == 0) connection1.ref else connection2.ref
+        }
+        watch(connection1.ref)
+        watch(connection2.ref)
+        val cpManager = newConnectionPoolManager(connectionFactory = connectionFactory)
+
+        system.eventStream.publish(addEvent)
+        connection1.expectMsg("Started")
+        cpManager ! ConnectionReady(connection1.ref, node1)
+        connection1.expectMsgType[Query]
+
+        system.eventStream.publish(addEvent)
+        expectTerminated(connection1.ref)
+        connection2.expectMsg("Started")
+      }
+    }
   }
 
 }
